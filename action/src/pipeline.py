@@ -54,7 +54,9 @@ class PipelineResult:
 
 
 def generated_test_filename(head: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "_", head.lower()).strip("_")[:60] or "change"
+    # Branches named "failfirst/<x>" would otherwise give test_failfirst_failfirst_<x>.py.
+    name = re.sub(r"^failfirst/", "", head, flags=re.IGNORECASE)
+    slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")[:60] or "change"
     return f"test_failfirst_{slug}.py"
 
 
