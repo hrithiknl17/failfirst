@@ -10,7 +10,7 @@ This tool refuses to do that. Before anyone sees a test, it builds the PR and th
 
 ## Proof from real runs
 
-All three cases below are real runs on local branches of [liquid-financial](https://github.com/hrithiknl17/liquid-financial), a Vite + React app, built with no secrets.
+Cases 1 to 3 are real runs on local branches of [liquid-financial](https://github.com/hrithiknl17/liquid-financial), a Vite + React app, built with no secrets. Case 4 is a real pull request on GitHub.
 
 ### 1. A test that passed 10 out of 10 reruns and was still wrong
 
@@ -81,6 +81,22 @@ E     - waiting for get_by_text("+0.0%")
 ```
 
 It also passes all 10 stability checks: 6 passes on the PR build and 4 failures on the base build.
+
+### 4. A real pull request on GitHub
+
+[liquid-financial PR #1](https://github.com/hrithiknl17/liquid-financial/pull/1) changes the header badge from "Saved locally" to "Saved on this device". It is a test PR and is not meant to be merged. The workflow ran on a GitHub-hosted runner ([run](https://github.com/hrithiknl17/liquid-financial/actions/runs/36732228454)) and `github-actions[bot]` posted [this comment](https://github.com/hrithiknl17/liquid-financial/pull/1#issuecomment-5913774969): VERIFIED on the first attempt, passing on the PR build, failing on the base build, and holding through all 10 stability checks.
+
+The whole job took 2m19s. Installing the generator and Chromium took 53s. From reading the diff to posting the comment took 1m15s, and that includes both builds, generation and all the verification runs.
+
+The posted test:
+
+```python
+def test_sync_status_badge_text(page: Page):
+    """Verify that the sync status badge displays 'Saved on this device'."""
+    page.clock.set_fixed_time("2026-01-15T10:00:00")
+    page.goto("/")
+    expect(page.get_by_text("Saved on this device")).to_be_visible()
+```
 
 ### Other results
 
@@ -155,9 +171,9 @@ python action/cli.py post --result out/your-branch/result.json --repo owner/name
 - **Tests check text and roles.** Changes that are purely visual, such as colours or spacing, have not been tried and are unlikely to verify.
 - **The heuristics assume JavaScript or TypeScript.** Finding changed functions, their call sites, and new UI text all assume JS/TS and JSX. Other stacks are untested.
 - **One test per PR, and one retry.**
-- **Tested on one app.** It has been run on five local branches of liquid-financial. It has run end to end in a local GitHub Actions runner (`act`), but not yet on a real GitHub PR. Posting a comment has only been tested against a mock of the GitHub API.
+- **Tested on one app.** It has been run on five local branches of liquid-financial, and on one real GitHub PR (case 4). Other apps and frameworks are untested.
 - **It depends on Gemini being available.** The first end-to-end run failed with HTTP 503 ("model is currently experiencing high demand"). The tool now falls back to other Gemini models, and reports an error if all of them fail.
-- **It is slow on a cold runner.** In the latest local Actions run, the whole Action took 7m18s. Of that, 4m29s was installing Chromium and its system packages, and generating and verifying took 2m4s, including the 10 stability checks. Nothing is cached yet.
+- **Nothing is cached yet.** Each run reinstalls the generator and Chromium. On a GitHub-hosted runner the whole job took 2m19s (case 4). In a local `act` container it took 7m18s, 4m29s of which was installing the generator and Chromium.
 
 ## Development
 
