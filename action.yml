@@ -1,9 +1,8 @@
-name: failfirst
-description: >-
-  Reads a pull request's diff, decides whether it changes user-facing behavior,
-  and writes a Playwright test for that change. The test is run against real
-  builds of the PR and its base before anyone sees it; only a verified test is
-  posted.
+name: "failfirst: verified PR tests"
+description: "Writes a Playwright test for a PR's UI change and posts it only if it passes on the PR build and fails on the base build."
+branding:
+  icon: check-circle
+  color: green
 
 inputs:
   gemini-api-key:

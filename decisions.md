@@ -194,3 +194,24 @@ reading the code.
 **Chose:** `v1.0.0` stays on the first published commit (`3a19c6d`), `v1.0.1` on the fix, and `v1` moves to `v1.0.1`. Docs say `@v1` follows the latest 1.x release; pin `@v1.0.1` or a commit SHA to stay on an exact version.
 **Why:** This is the standard GitHub Actions convention: users on `@v1` get fixes automatically, anyone who needs exact reproducibility pins a full version or SHA, and every published state stays addressable. Moving `v1` rewrites a public tag, so it needs a force-push of that one tag — done only with explicit approval.
 **Ours vs generated:** your call
+
+## [2026-09-30] Decision: Marketplace metadata — display name, one-line description, branding
+**Context:** Preparing for a GitHub Marketplace listing. Marketplace requires a unique `name` that doesn't match an existing action, a GitHub user/org, a category, or a GitHub feature. A GitHub account named `failfirst` already exists, so `name: failfirst` would be refused.
+**Options considered:** Rename the repo vs change only the display name.
+**Chose:** `name: "failfirst: verified PR tests"` (quoted — unquoted, the second colon is invalid YAML). Repo name and `uses: hrithiknl17/failfirst@v1` unchanged. Description is one line, 121 characters: "Writes a Playwright test for a PR's UI change and posts it only if it passes on the PR build and fails on the base build." Branding `icon: check-circle`, `color: green`, both checked against the allowed lists in GitHub's metadata-syntax docs. A test pins all three.
+**Why:** Only the display name has to be unique; the repo name is what users type. Checked 2026-09-30: no Marketplace listing at `failfirst-verified-pr-tests` or `failfirst`, and a Marketplace search for "failfirst" returns no actions.
+**Ours vs generated:** your call (name and requirements); icon and colour my call
+
+## [2026-09-30] Decision: Version-pin wording that doesn't go stale
+**Context:** README and the example workflow said "pin `@v1.0.1`" as the exact-version example; after v1.0.2 that was no longer the latest.
+**Options considered:** Bump the example on every release vs point at the releases page.
+**Chose:** "pin a full release tag such as `@v1.0.2`, or a commit SHA", with a link to the releases page (the example workflow links the page without naming a version).
+**Why:** The example stays true (v1.0.2 exists) and the link always shows the latest, so the docs don't need editing for each release.
+**Ours vs generated:** my interpretation of your "first Pin @v1.0.1"
+
+## [2026-09-30] Decision: Keep ci.yml; plan if Marketplace refuses a repo with workflows
+**Context:** You'd read that Marketplace repos must not contain workflow files. The current requirements in GitHub's docs (checked 2026-09-30) list only: public repo, one `action.yml` at the root (others allowed in sub-folders), unique name — plus 2FA and the Marketplace Developer Agreement to publish. Older versions of that page did carry the workflow-files rule.
+**Options considered:** Remove `ci.yml` pre-emptively vs keep it and react if blocked.
+**Chose:** Keep it. If the "Publish this Action" option is refused because of it: move the unit-test workflow to a separate public repo (e.g. `hrithiknl17/failfirst-ci`) that checks out `hrithiknl17/failfirst` and runs pytest on a schedule and on demand; delete `ci.yml` here; tag the next patch release and publish that.
+**Why:** CI is what caught nothing-broke after every change; removing it for a rule that no longer appears in the docs would trade a real safety net for a hypothetical.
+**Ours vs generated:** joint

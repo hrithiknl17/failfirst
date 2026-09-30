@@ -154,7 +154,7 @@ jobs:
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
 ```
 
-It also needs a `GEMINI_API_KEY` repo secret. `@v1` follows the latest 1.x release. To stay on one exact version, pin `@v1.0.1` or a commit SHA instead. The build and serve commands default to `npm run build` and `vite preview`, and can be changed with the `build-command`, `serve-command` and `install-command` inputs. Set `post-comment: "false"` to render the comment without posting it.
+It also needs a `GEMINI_API_KEY` repo secret. `@v1` follows the latest 1.x release. To stay on one exact version, pin a full release tag such as `@v1.0.2`, or a commit SHA. The [releases page](https://github.com/hrithiknl17/failfirst/releases) lists every version. The build and serve commands default to `npm run build` and `vite preview`, and can be changed with the `build-command`, `serve-command` and `install-command` inputs. Set `post-comment: "false"` to render the comment without posting it.
 
 To run it locally against a checkout:
 

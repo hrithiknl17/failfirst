@@ -1,6 +1,7 @@
 # Copy to .github/workflows/failfirst.yml in the target repo (e.g. liquid-financial).
 # Needs a repo secret GEMINI_API_KEY. @v1 follows the latest 1.x release;
-# pin @v1.0.1 or a commit SHA to stay on one exact version.
+# pin a full release tag (https://github.com/hrithiknl17/failfirst/releases)
+# or a commit SHA to stay on one exact version.
 name: Verified PR tests
 
 on:
