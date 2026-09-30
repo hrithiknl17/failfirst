@@ -1,0 +1,9 @@
+[project]
+name = "pr-test-generator"
+version = "0.1.0"
+description = "PR-scoped, verified Playwright test generator (GitHub Action)"
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+pythonpath = ["action/src"]
+testpaths = ["tests"]
