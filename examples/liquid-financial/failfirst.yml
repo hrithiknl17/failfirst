@@ -1,6 +1,6 @@
 # Copy to .github/workflows/failfirst.yml in the target repo (e.g. liquid-financial).
-# Needs a repo secret GEMINI_API_KEY. Replace OWNER/failfirst with where this
-# Action is published — it isn't yet.
+# Needs a repo secret GEMINI_API_KEY. @v1 follows the latest 1.x release;
+# pin @v1.0.1 or a commit SHA to stay on one exact version.
 name: Verified PR tests
 
 on:
@@ -33,6 +33,6 @@ jobs:
         with:
           node-version: 22
 
-      - uses: OWNER/failfirst@v1
+      - uses: hrithiknl17/failfirst@v1
         with:
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}

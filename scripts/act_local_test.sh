@@ -37,7 +37,7 @@ python - "$ROOT/examples/liquid-financial/failfirst.yml" .github/workflows/failf
 import sys
 src, dst = sys.argv[1], sys.argv[2]
 text = open(src, encoding="utf-8").read()
-text = text.replace("uses: OWNER/failfirst@v1", "uses: ./.failfirst-action")
+text = text.replace("uses: hrithiknl17/failfirst@v1", "uses: ./.failfirst-action")
 text = text.replace("          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}",
                     "          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}\n          post-comment: \"false\"")
 text = text.replace("          ref: ${{ github.event.pull_request.head.sha }}\n", "")

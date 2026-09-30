@@ -109,7 +109,7 @@ Across the five local branches:
 
 ## Quick start
 
-The Action is not published yet. Once it is, a repo adds `.github/workflows/failfirst.yml`:
+To use it in a repo, add `.github/workflows/failfirst.yml`:
 
 ```yaml
 name: Verified PR tests
@@ -133,12 +133,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - uses: OWNER/failfirst@v1
+      - uses: hrithiknl17/failfirst@v1
         with:
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
 ```
 
-It also needs a `GEMINI_API_KEY` repo secret. The build and serve commands default to `npm run build` and `vite preview`, and can be changed with the `build-command`, `serve-command` and `install-command` inputs. Set `post-comment: "false"` to render the comment without posting it.
+It also needs a `GEMINI_API_KEY` repo secret. `@v1` follows the latest 1.x release. To stay on one exact version, pin `@v1.0.1` or a commit SHA instead. The build and serve commands default to `npm run build` and `vite preview`, and can be changed with the `build-command`, `serve-command` and `install-command` inputs. Set `post-comment: "false"` to render the comment without posting it.
 
 To run it locally against a checkout:
 

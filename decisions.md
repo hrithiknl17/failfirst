@@ -187,3 +187,10 @@ reading the code.
 **Chose:** Rewrite all commits: author and committer set to `215130962+hrithiknl17@users.noreply.github.com` (ID+username form, so commits still link to the account), and the reviewer's name replaced with "a reviewer" in every commit's files. The "Ours vs generated" notes are unchanged.
 **Why:** Nothing has been pushed, so rewriting is free and safe now and impossible to undo later — once a public commit exists, forks and caches keep it.
 **Ours vs generated:** your call (email and name removal); rewriting history rather than only the latest files was my call
+
+## [2026-09-30] Decision: Version tags — v1.0.0, v1.0.1, and a moving v1
+**Context:** The first push tagged `v1` on a commit whose README and example workflow still said "not published yet" and `OWNER/failfirst@v1`. The fix is a new commit.
+**Options considered:** Move `v1` silently vs keep a fixed tag per release plus a moving major tag vs only fixed tags.
+**Chose:** `v1.0.0` stays on the first published commit (`3a19c6d`), `v1.0.1` on the fix, and `v1` moves to `v1.0.1`. Docs say `@v1` follows the latest 1.x release; pin `@v1.0.1` or a commit SHA to stay on an exact version.
+**Why:** This is the standard GitHub Actions convention: users on `@v1` get fixes automatically, anyone who needs exact reproducibility pins a full version or SHA, and every published state stays addressable. Moving `v1` rewrites a public tag, so it needs a force-push of that one tag — done only with explicit approval.
+**Ours vs generated:** your call

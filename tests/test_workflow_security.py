@@ -71,4 +71,4 @@ def test_only_the_post_step_uses_the_post_flag():
 def test_third_party_actions_are_first_party_github_only(path):
     uses = re.findall(r"uses:\s*([^\s#]+)", (ROOT / path).read_text(encoding="utf-8"))
     for ref in uses:
-        assert ref.startswith("actions/") or ref.startswith("OWNER/failfirst@"), ref
+        assert ref.startswith("actions/") or ref.startswith("hrithiknl17/failfirst@"), ref
