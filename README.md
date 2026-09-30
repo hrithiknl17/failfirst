@@ -183,3 +183,7 @@ bash scripts/act_local_test.sh same-repo    # full local Actions run in Docker, 
 ```
 
 Design decisions and their reasons are in [decisions.md](decisions.md).
+
+## License
+
+MIT. See [LICENSE](LICENSE).

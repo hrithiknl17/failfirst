@@ -215,3 +215,10 @@ reading the code.
 **Chose:** Keep it. If the "Publish this Action" option is refused because of it: move the unit-test workflow to a separate public repo (e.g. `hrithiknl17/failfirst-ci`) that checks out `hrithiknl17/failfirst` and runs pytest on a schedule and on demand; delete `ci.yml` here; tag the next patch release and publish that.
 **Why:** CI is what caught nothing-broke after every change; removing it for a rule that no longer appears in the docs would trade a real safety net for a hypothetical.
 **Ours vs generated:** joint
+
+## [2026-09-30] Decision: MIT license
+**Context:** The repo had no license, so nobody else could legally use the Action — a problem for a Marketplace listing.
+**Options considered:** MIT vs Apache-2.0 vs no license.
+**Chose:** MIT, copyright "hrithiknl17" (the GitHub handle; no legal name was given, so none was invented). Declared in `pyproject.toml` and linked from the README.
+**Why:** MIT is the most common licence for GitHub Actions and the simplest for users to accept. Apache-2.0 adds an explicit patent grant, which matters little for a tool like this.
+**Ours vs generated:** your call (MIT); copyright holder wording my call
