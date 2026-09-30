@@ -75,3 +75,52 @@ reading the code.
 **Chose:** `action/src` on the path; step packages imported by name (`diff_extraction`, `classification`, …); shared Gemini client in an extra `action/src/llm/` package; CLI entry at `action/cli.py`.
 **Why:** Keeps the mandated folder names while giving clean imports. `llm/` is the one addition to the brief's layout — both LLM steps need it and it belongs to neither.
 **Ours vs generated:** my call
+
+## [2026-09-30] Decision: A verified test must FAIL on the base build and PASS on the PR build
+**Context:** "Passes against a real build" alone is weak: a test that checks something already true (e.g. "the page has a button") passes on the PR and proves nothing about the change.
+**Options considered:** Run only against the PR build vs also run against the base (merge-base) build and require a failure there.
+**Chose:** Both. VERIFIED = passes on PR build AND fails on base build. Passing on both is treated as a failed attempt ("doesn't cover the change").
+**Why:** It's the cheapest objective proof that the test actually covers this PR. Costs one extra build + one extra run per PR. Stricter than the brief, same direction as its spirit.
+**Ours vs generated:** joint (I proposed, you approved)
+
+## [2026-09-30] Decision: One retry total, shared across failure types
+**Context:** Brief says retry once on selector failure with the DOM fed back. There are now three ways an attempt can fail: rejected by the safety check, fails on the PR build, passes on the base build.
+**Options considered:** One retry per failure type (up to 4 generations) vs one retry total (max 2 generations).
+**Chose:** Max 2 generations. Any failure feeds its specific evidence (pytest output, ARIA snapshot at the moment of failure, or "this also passes on base") into the single retry. Still failing → UNVERIFIED, not posted.
+**Why:** Keeps cost and latency bounded and matches the brief's "retry once". If pass rates are low, the lever is the model or the context, not more retries.
+**Ours vs generated:** my call
+
+## [2026-09-30] Decision: Serve the production bundle with `vite preview`; reach app state through the UI only
+**Context:** Verification needs a real running build of the PR (and of base). The app also has an Express server, but it only backs the AI/cloud features.
+**Options considered:** `vite dev` vs `vite build` + `vite preview` vs the full `npm run serve` (Express). For state: inject demo data into localStorage vs click through the UI.
+**Chose:** `npm run build`, then `npm run preview -- --port {port} --strictPort --host 127.0.0.1` (both overridable per target). Tests start from an empty browser and click "Try it with sample data" like a user would.
+**Why:** The production bundle is what users get; dev mode can hide build-only bugs. Express adds nothing testable without secrets. Injecting localStorage couples tests to storage internals and can make a test pass without the UI working.
+**Ours vs generated:** joint (I proposed, you approved)
+
+## [2026-09-30] Decision: Build each ref in a git worktree nested inside the target checkout
+**Context:** Need base and PR builds side by side without disturbing the checkout, and `npm ci` per build costs ~30s.
+**Options considered:** Check out refs in place (mutates the working tree) vs worktrees in a temp dir (needs its own `npm ci`) vs worktrees under `<repo>/.prgen/worktrees/<sha>`.
+**Chose:** Nested worktrees, excluded via the repo's local `.git/info/exclude`. `npm ci` runs inside a worktree only when its `package.json`/lockfile differs from the checkout's.
+**Why:** Node resolves packages by walking up directories, so a nested worktree reuses the parent's `node_modules` — measured: build in ~6s, no install. Worktrees are keyed by commit SHA so reruns reuse finished builds. The checkout's `git status` stays clean.
+**Ours vs generated:** my call
+
+## [2026-09-30] Decision: Generated test code is AST-checked and run with a scrubbed environment
+**Context:** The test is written by an LLM whose input includes untrusted PR content, and it is then *executed* on the runner. A prompt-injected PR could steer it into reading secrets (e.g. `GITHUB_TOKEN`) or faking a pass by editing the DOM.
+**Options considered:** Trust the model vs static allowlist check + minimal environment.
+**Chose:** Before running, parse the code: only `re`, `pytest`, `playwright.sync_api` imports; no `eval`/`exec`/`open`/dunder access; no `page.evaluate`, `add_init_script`, `route`, `set_content`, `request`, or sleeps. Violations count as a failed attempt. The pytest subprocess gets an env with only PATH/temp/home-type variables — no tokens, no API keys.
+**Why:** Defense in depth for code execution driven by untrusted input. The Playwright restrictions double as honesty rules: a test may only do what a user can do, so it can't pass by manipulating the page.
+**Ours vs generated:** my call
+
+## [2026-09-30] Decision: Context for generation = PR-build ARIA snapshot + new source + call sites of changed symbols
+**Context:** Classification on `demo/percent-zero` showed the model can't tell *where* a shared helper (`percent()`) is rendered from the diff alone.
+**Options considered:** Diff only vs diff + full new source of changed files + `git grep` call sites of the exported symbols whose bodies changed + ARIA snapshot of the landing page.
+**Chose:** The latter, all read from the PR commit via git (no working-tree reads), with size caps.
+**Why:** Snapshot gives real selectors for the entry screen; call sites tell the model which screen to navigate to; the failure-time snapshot on retry covers screens deeper in the app.
+**Ours vs generated:** my call
+
+## [2026-09-30] Decision: Fall back to other Gemini models when one is overloaded
+**Context:** First end-to-end run died on `gemini-3.8-flash` returning HTTP 503 "model is currently experiencing high demand" three times in a row. The error surfaced correctly, but one busy model shouldn't fail a PR.
+**Options considered:** Longer retries on one model vs a fallback chain vs fail the run.
+**Chose:** 4 attempts per model with exponential backoff, then the next model in a chain: generation `3.8-flash → 3.5-flash → 2.5-flash`, classification `3.1-flash-lite → 3.5-flash-lite → 2.5-flash-lite` (env-overridable). Only "unavailable" moves down the chain — a bad request or bad answer still fails immediately.
+**Why:** Overload is transient and model-specific. Verification is the quality gate, so a fallback model can't lower what gets posted — at worst it lowers the verified rate.
+**Ours vs generated:** my call

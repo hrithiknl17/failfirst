@@ -7,6 +7,7 @@ from .classify import (
     ClassificationError,
     build_prompt,
     classify,
+    render_file,
 )
 from .prefilter import SKIP_RULES, PrefilterResult, prefilter
 
@@ -21,4 +22,5 @@ __all__ = [
     "build_prompt",
     "classify",
     "prefilter",
+    "render_file",
 ]

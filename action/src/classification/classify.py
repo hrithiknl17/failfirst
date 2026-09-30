@@ -162,12 +162,13 @@ def build_prompt(diff: DiffResult, pre: PrefilterResult, *, pr_title: str = "", 
     out.append(f"Changed files to judge ({len(pre.candidates)}):")
     for change in pre.candidates:
         out.append("")
-        out.extend(_render_file(change))
+        out.extend(render_file(change))
     out.append("=== END UNTRUSTED PR CONTENT ===")
     return "\n".join(out)
 
 
-def _render_file(change: FileChange) -> List[str]:
+def render_file(change: FileChange) -> List[str]:
+    """One file's diff between BEGIN/END markers, as shown to the LLM (shared with generation)."""
     title = f"{change.path} ({change.status}, +{change.added} -{change.removed})"
     if change.old_path:
         title += f", renamed from {change.old_path}"

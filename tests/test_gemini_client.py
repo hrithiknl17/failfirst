@@ -3,7 +3,7 @@ import json
 import httpx
 import pytest
 
-from llm import GeminiClient, LLMError
+from llm import FallbackClient, GeminiClient, LLMError, ModelUnavailable
 
 SCHEMA = {"type": "OBJECT", "properties": {"ok": {"type": "BOOLEAN"}}}
 
@@ -55,11 +55,48 @@ def test_retries_rate_limit_then_succeeds():
     assert len(seen) == 2
 
 
-def test_gives_up_after_retries():
-    client, seen = client_with(*[(503, {"error": "down"})] * 3)
-    with pytest.raises(LLMError, match="after 3 attempts"):
+def test_gives_up_after_retries_as_model_unavailable():
+    client, seen = client_with(*[(503, {"error": "down"})] * 4)
+    with pytest.raises(ModelUnavailable, match="after 4 attempts"):
         call(client)
-    assert len(seen) == 3
+    assert len(seen) == 4
+
+
+class ScriptedModels:
+    """Inner client where some models are 'overloaded'."""
+
+    def __init__(self, unavailable=(), broken=()):
+        self.unavailable, self.broken, self.tried = set(unavailable), set(broken), []
+
+    def generate_json(self, *, model, **kwargs):
+        self.tried.append(model)
+        if model in self.unavailable:
+            raise ModelUnavailable(f"{model} overloaded")
+        if model in self.broken:
+            raise LLMError(f"{model} bad request")
+        return {"model": model}
+
+
+def test_fallback_moves_to_next_model_only_when_unavailable():
+    inner = ScriptedModels(unavailable={"primary"})
+    client = FallbackClient(inner, {"primary": ["backup", "last"]})
+    assert client.generate_json(model="primary", system="", prompt="", schema={}) == {"model": "backup"}
+    assert inner.tried == ["primary", "backup"]
+
+
+def test_fallback_does_not_hide_real_errors():
+    inner = ScriptedModels(broken={"primary"})
+    client = FallbackClient(inner, {"primary": ["backup"]})
+    with pytest.raises(LLMError, match="bad request"):
+        client.generate_json(model="primary", system="", prompt="", schema={})
+    assert inner.tried == ["primary"]
+
+
+def test_fallback_reports_every_model_when_all_unavailable():
+    inner = ScriptedModels(unavailable={"primary", "backup"})
+    client = FallbackClient(inner, {"primary": ["backup"]})
+    with pytest.raises(ModelUnavailable, match="primary overloaded.*backup overloaded"):
+        client.generate_json(model="primary", system="", prompt="", schema={})
 
 
 def test_client_error_is_not_retried():

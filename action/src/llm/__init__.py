@@ -1,4 +1,4 @@
 """LLM access shared by classification and generation."""
-from .gemini import GeminiClient, LLMClient, LLMError
+from .gemini import FallbackClient, GeminiClient, LLMClient, LLMError, ModelUnavailable
 
-__all__ = ["GeminiClient", "LLMClient", "LLMError"]
+__all__ = ["FallbackClient", "GeminiClient", "LLMClient", "LLMError", "ModelUnavailable"]

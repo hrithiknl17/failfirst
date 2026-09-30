@@ -1,6 +1,9 @@
 """Run the generated test against a real local build before a human sees it.
 
-Contract (built in step 5): on selector failure, retry generation once with
-the DOM snapshot fed back in. Still failing -> result is UNVERIFIED and the
-test is not posted.
+On failure, retry generation once with the evidence (pytest output + the DOM
+at the moment of failure) fed back in. Still failing -> UNVERIFIED, not posted.
 """
+from .runner import RunResult, run_test
+from .verify import MAX_GENERATIONS, Attempt, VerificationResult, verify
+
+__all__ = ["MAX_GENERATIONS", "Attempt", "RunResult", "VerificationResult", "run_test", "verify"]

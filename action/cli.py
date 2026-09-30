@@ -1,13 +1,16 @@
 """Run pipeline steps from the command line.
 
     python action/cli.py classify --repo ../liquid-financial-sandbox --base master --head my-branch
+    python action/cli.py run      --repo ../liquid-financial-sandbox --base master --head my-branch
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
 import sys
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -15,8 +18,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 import settings  # noqa: E402
 from classification import Classification, ClassificationError, classify  # noqa: E402
+from context import DEFAULT_BUILD_CMD, DEFAULT_INSTALL_CMD, DEFAULT_SERVE_CMD  # noqa: E402
 from diff_extraction import DiffError, DiffResult, extract_diff  # noqa: E402
-from llm import GeminiClient  # noqa: E402
+from llm import FallbackClient, GeminiClient  # noqa: E402
+from pipeline import AppCommands, PipelineResult, run_pipeline  # noqa: E402
 
 _STATUS_LETTER = {"added": "A", "modified": "M", "deleted": "D", "renamed": "R"}
 
@@ -33,18 +38,31 @@ def main(argv=None) -> int:
     p_classify.add_argument("--body", default="", help="PR description")
     p_classify.add_argument("--json", action="store_true", help="print machine-readable JSON")
 
+    p_run = sub.add_parser("run", help="classify, then generate and verify a test")
+    p_run.add_argument("--repo", required=True, help="path to the target git checkout")
+    p_run.add_argument("--base", required=True, help="base ref (e.g. master)")
+    p_run.add_argument("--head", required=True, help="head ref (e.g. the PR branch)")
+    p_run.add_argument("--title", default="", help="PR title")
+    p_run.add_argument("--body", default="", help="PR description")
+    p_run.add_argument("--out", default="out", help="output directory (a subfolder per head ref)")
+    p_run.add_argument("--notes-file", default="", help="optional maintainer notes about the app for the model")
+    p_run.add_argument("--build-cmd", default=DEFAULT_BUILD_CMD)
+    p_run.add_argument("--serve-cmd", default=DEFAULT_SERVE_CMD, help="must contain {port}")
+    p_run.add_argument("--install-cmd", default=DEFAULT_INSTALL_CMD)
+
     args = parser.parse_args(argv)
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except AttributeError:  # not a real stream (e.g. under some test runners)
-        pass
-    return _classify(args)
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except AttributeError:  # not a real stream (e.g. under some test runners)
+            pass
+    return _classify(args) if args.command == "classify" else _run(args)
 
 
 def _classify(args) -> int:
     try:
         diff = extract_diff(args.repo, args.base, args.head)
-        llm = GeminiClient() if os.environ.get("GEMINI_API_KEY") else None
+        llm = _llm()
         result = classify(
             diff, llm, model=settings.classify_model(), pr_title=args.title, pr_body=args.body
         )
@@ -57,6 +75,48 @@ def _classify(args) -> int:
     else:
         _print_report(diff, result)
     return 0
+
+
+def _llm():
+    if not os.environ.get("GEMINI_API_KEY"):
+        return None
+    return FallbackClient(GeminiClient(), settings.fallback_models())
+
+
+def _run(args) -> int:
+    llm = _llm()
+    notes = Path(args.notes_file).read_text(encoding="utf-8") if args.notes_file else ""
+    out_dir = Path(args.out) / re.sub(r"[^A-Za-z0-9._-]+", "_", args.head)
+    result = run_pipeline(
+        args.repo, args.base, args.head, llm, out_dir,
+        title=args.title, body=args.body, notes=notes,
+        commands=AppCommands(build=args.build_cmd, serve=args.serve_cmd, install=args.install_cmd),
+        log=lambda msg: print(f"[prgen {time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr, flush=True),
+    )
+    _print_run_report(result, out_dir)
+    return 2 if result.status == "error" else 0
+
+
+def _print_run_report(result: PipelineResult, out_dir: Path) -> None:
+    print(f"Status: {result.status.upper().replace('_', ' ')}")
+    if result.error:
+        print(f"Error:  {result.error}")
+    if result.classification:
+        print(f"Why:    {result.classification.reason}")
+    verification = result.verification
+    if verification:
+        print(f"Verify: {verification.reason}")
+        for attempt in verification.attempts:
+            runs = []
+            if attempt.head:
+                runs.append(f"PR build: {attempt.head.outcome}")
+            if attempt.base:
+                runs.append(f"base build: {attempt.base.outcome}")
+            detail = "; ".join(runs) or "; ".join(attempt.problems)
+            print(f"  attempt {attempt.number}: {attempt.verdict} ({detail})")
+    if result.test_file:
+        print(f"Test:   {result.test_file}")
+    print(f"Result: {out_dir / 'result.json'}")
 
 
 def _diff_summary(diff: DiffResult) -> dict:

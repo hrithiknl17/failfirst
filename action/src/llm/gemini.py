@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import Any, Callable, Dict, Optional, Protocol
+from typing import Any, Callable, Dict, Optional, Protocol, Sequence
 
 import httpx
 
@@ -19,6 +19,10 @@ _RETRYABLE = {429, 500, 502, 503, 504}
 
 class LLMError(RuntimeError):
     """The model call failed or returned something we can't use."""
+
+
+class ModelUnavailable(LLMError):
+    """The model stayed overloaded / erroring through every retry; another model may work."""
 
 
 class LLMClient(Protocol):
@@ -34,7 +38,7 @@ class GeminiClient:
         api_key: Optional[str] = None,
         *,
         timeout: float = 120.0,
-        max_retries: int = 2,
+        max_retries: int = 3,
         transport: Optional[httpx.BaseTransport] = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -77,7 +81,31 @@ class GeminiClient:
             if resp.status_code != 200:
                 raise LLMError(f"Gemini {model} returned HTTP {resp.status_code}: {resp.text[:500]}")
             return _parse_response(resp.json(), model)
-        raise LLMError(f"Gemini {model} failed after {self._max_retries + 1} attempts ({last_problem})")
+        raise ModelUnavailable(f"Gemini {model} failed after {self._max_retries + 1} attempts ({last_problem})")
+
+
+class FallbackClient:
+    """Tries the next model in a chain when one is unavailable.
+
+    Only ``ModelUnavailable`` moves down the chain; a bad request or a bad
+    answer is a real error and surfaces immediately.
+    """
+
+    def __init__(self, inner: LLMClient, fallbacks: Dict[str, Sequence[str]]) -> None:
+        self._inner = inner
+        self._fallbacks = fallbacks
+
+    def generate_json(
+        self, *, model: str, system: str, prompt: str, schema: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        chain = [model, *self._fallbacks.get(model, ())]
+        problems = []
+        for candidate in chain:
+            try:
+                return self._inner.generate_json(model=candidate, system=system, prompt=prompt, schema=schema)
+            except ModelUnavailable as exc:
+                problems.append(str(exc))
+        raise ModelUnavailable("every model in the chain was unavailable: " + " | ".join(problems))
 
 
 def _parse_response(data: Dict[str, Any], model: str) -> Dict[str, Any]:
