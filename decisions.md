@@ -124,3 +124,17 @@ reading the code.
 **Chose:** 4 attempts per model with exponential backoff, then the next model in a chain: generation `3.8-flash → 3.5-flash → 2.5-flash`, classification `3.1-flash-lite → 3.5-flash-lite → 2.5-flash-lite` (env-overridable). Only "unavailable" moves down the chain — a bad request or bad answer still fails immediately.
 **Why:** Overload is transient and model-specific. Verification is the quality gate, so a fallback model can't lower what gets posted — at worst it lowers the verified rate.
 **Ours vs generated:** my call
+
+## [2026-09-30] Decision: UNVERIFIED reasons diagnose "not reachable" separately from "test failed"
+**Context:** On `demo/ui-demo-button` the tool correctly refused to post, but said "failed against the PR build", which reads like flakiness. The real cause: the changed button lives on the sign-in screen, which never renders in a build without Supabase keys.
+**Options considered:** Generic reason vs detect unreachable UI.
+**Chose:** Extract the user-visible text the PR added (JSX text, prose string literals). If none of it appears on the start page or on any page where an attempt failed, say "change not reachable in this build … Not a flaky test: the UI was never there to find." Otherwise name the first pytest error. No text extractable (e.g. a formula change) → no reachability claim.
+**Why:** The difference between someone trusting the tool's judgment and someone thinking it's flaky. The check is conservative: it only claims "not reachable" when *every* new string is absent from *every* page seen.
+**Ours vs generated:** your call (you asked for it); detection method my call
+
+## [2026-09-30] Decision: Stability gate — a VERIFIED test must survive reruns and a clock sweep
+**Context:** Asked to rerun both verified tests 5–10×. Reading the code first showed the Hub banner depends on time of day. Results: `percent-zero` held 10/10 on each build and was correct at all 6 clock times; `hub-log-button` held 10/10 at 14:50 — but **failed on the PR build at 06:00, 21:00 and 23:30**. Plain reruns would have certified a time bomb (and CI runners are on UTC, so it would flip at 02:00 IST).
+**Options considered:** Reruns only vs reruns + faking the browser clock (Playwright `page.clock`) vs pinning the clock for every test.
+**Chose:** After a first pass, 2 more reruns on the PR build plus the clock at 03:00 / 13:00 / 22:00 on both builds (PR must pass, base must still fail) — 8 extra runs. Any deviation = failed attempt; the retry is told which checks flipped and to pin the clock with `page.clock.set_fixed_time` before `page.goto`. The generation prompt also asks for that up front for date/time-dependent UI.
+**Why:** A "verified" test that flips is worse than an honest UNVERIFIED — it breaks the pitch. Pinning every test's clock would hide real time-dependence instead of handling it deliberately. Cost is ~8 runs (~1 min locally), paid only by tests that already passed once.
+**Ours vs generated:** joint (you asked for the flakiness check; the clock sweep and gate were my call from what it found)

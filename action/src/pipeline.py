@@ -29,7 +29,10 @@ from context import (
 from diff_extraction import DiffError, extract_diff
 from generation import GenerationError, generate_test
 from llm import LLMClient
-from verification import VerificationResult, verify
+from pr_comment import render_comment
+from verification import VerificationResult, explain, verify
+
+TEST_DIR = "e2e"
 
 
 @dataclass(frozen=True)
@@ -73,8 +76,18 @@ def run_pipeline(
         _run(result, repo, base, head, llm, out_dir, title, body, notes, commands, log)
     except (DiffError, ClassificationError, BuildError, GenerationError) as exc:
         result.status, result.error = "error", str(exc)
-    (out_dir / "result.json").write_text(json.dumps(asdict(result), indent=2), encoding="utf-8")
+    data = asdict(result)
+    (out_dir / "result.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+    # Rendered offline so every run leaves a reviewable comment; sending it is a separate step.
+    (out_dir / "comment.md").write_text(
+        render_comment(data, test_repo_path=suggested_test_path(head)), encoding="utf-8"
+    )
     return result
+
+
+def suggested_test_path(head: str, test_dir: str = TEST_DIR) -> str:
+    """Where the suggested test would live in the target repo."""
+    return f"{test_dir}/{generated_test_filename(head)}"
 
 
 def _run(result, repo, base, head, llm, out_dir, title, body, notes, commands, log) -> None:
@@ -110,6 +123,7 @@ def _run(result, repo, base, head, llm, out_dir, title, body, notes, commands, l
         result.verification = verify(generate, head_url=head_url, base_url=base_url, workdir=out_dir / "runs")
 
     verification = result.verification
+    verification.reason, verification.diagnosis = explain(verification, changes, ctx.aria_snapshot)
     result.status = verification.status
     if verification.test is not None:
         name = generated_test_filename(head)

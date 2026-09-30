@@ -26,15 +26,17 @@ class Runner:
         self.outcomes = outcomes
         self.calls = []
 
-    def __call__(self, code, url, workdir: Path):
+    def __call__(self, code, url, workdir: Path, fixed_time=None):
         which = "pr" if workdir.name.endswith("-pr") else "base"
         self.calls.append((code, which))
         outcome = self.outcomes[(code, which)]
         return RunResult(outcome, f"output for {which}", "SNAP" if outcome == "failed" else "")
 
 
-def run(gen, runner, tmp_path):
-    return verify(gen, head_url="http://pr", base_url="http://base", workdir=tmp_path, run=runner)
+def run(gen, runner, tmp_path, **kwargs):
+    kwargs.setdefault("stability_reruns", 0)
+    kwargs.setdefault("stability_clocks", ())
+    return verify(gen, head_url="http://pr", base_url="http://base", workdir=tmp_path, run=runner, **kwargs)
 
 
 def test_verified_when_passes_on_pr_and_fails_on_base(tmp_path):
@@ -87,3 +89,51 @@ def test_base_infrastructure_error_stops_without_retry(tmp_path):
     assert result.status == "unverified"
     assert [a.verdict for a in result.attempts] == ["base_error"]
     assert len(gen.feedback) == 1
+
+
+# --- stability gate ----------------------------------------------------------
+
+class ClockRunner:
+    """PR build passes only between 08:00 and 20:30 (like liquid-financial's morning brief)."""
+
+    def __init__(self, pinned_codes=()):
+        self.pinned = set(pinned_codes)  # codes that pin their own clock -> always pass on PR
+        self.calls = []
+
+    def __call__(self, code, url, workdir, fixed_time=None):
+        self.calls.append((url, fixed_time))
+        if url == "http://base":
+            return RunResult("failed", "E   element(s) not found")
+        if code in self.pinned or fixed_time is None:
+            return RunResult("passed", "")
+        hour = int(fixed_time.split("T")[1][:2])
+        ok = 8 <= hour < 20
+        return RunResult("passed" if ok else "failed", "" if ok else "E   element(s) not found", "URL: /\n- banner")
+
+
+def gated(gen, runner, tmp_path):
+    return verify(gen, head_url="http://pr", base_url="http://base", workdir=tmp_path, run=runner,
+                  stability_reruns=2, stability_clocks=("03:00", "13:00", "22:00"), today="2026-09-30")
+
+
+def test_time_dependent_test_is_not_verified(tmp_path):
+    gen = Generator(GOOD, GOOD)
+    result = gated(gen, ClockRunner(), tmp_path)
+    assert result.status == "unverified"
+    assert result.diagnosis == "unstable"
+    assert "PR build with clock at 03:00: failed, expected passed" in result.reason
+    assert "PR build with clock at 22:00: failed, expected passed" in result.reason
+    assert "13:00" not in result.reason
+    fb = gen.feedback[1]
+    assert fb.kind == "unstable" and "03:00" in fb.details
+
+
+def test_retry_that_pins_the_clock_is_verified(tmp_path):
+    gen = Generator(GOOD, OTHER)
+    runner = ClockRunner(pinned_codes={OTHER})
+    result = gated(gen, runner, tmp_path)
+    assert result.status == "verified"
+    assert result.test.code == OTHER
+    assert "8 stability checks" in result.reason
+    # 2 reruns + 3 clocks x (PR + base), plus the first PR and base run, for the verified attempt
+    assert ("http://base", "2026-09-30T22:00:00") in runner.calls

@@ -6,6 +6,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 TEST_FILENAME = "test_generated.py"
 SNAPSHOT_FILENAME = "failure_snapshot.txt"
@@ -22,6 +23,7 @@ _ENV_KEEP = (
 # Captures what the page looked like when the test failed; that snapshot is
 # the DOM the single retry gets to see.
 CONFTEST = '''\
+import os
 from pathlib import Path
 
 import pytest
@@ -30,6 +32,11 @@ import pytest
 @pytest.fixture(autouse=True)
 def _prgen_fail_fast(page):
     page.set_default_timeout(10_000)
+    # Stability checks re-run the test at other wall-clock times. A test that
+    # pins its own clock overrides this, which is exactly what makes it stable.
+    fixed = os.environ.get("PRGEN_FIXED_TIME")
+    if fixed:
+        page.clock.set_fixed_time(fixed)
     yield
 
 
@@ -57,7 +64,10 @@ class RunResult:
     failure_snapshot: str = ""
 
 
-def run_test(code: str, base_url: str, workdir: Path, *, timeout: int = 180) -> RunResult:
+def run_test(
+    code: str, base_url: str, workdir: Path, *, timeout: int = 180, fixed_time: Optional[str] = None
+) -> RunResult:
+    """Run ``code`` against ``base_url``. ``fixed_time`` (ISO local time) fakes the browser clock."""
     workdir.mkdir(parents=True, exist_ok=True)
     (workdir / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
     (workdir / "conftest.py").write_text(CONFTEST, encoding="utf-8")
@@ -72,8 +82,11 @@ def run_test(code: str, base_url: str, workdir: Path, *, timeout: int = 180) -> 
         "--base-url", base_url, "--browser", "chromium", "-q", "--tb=short",
     ]
     try:
+        env = _scrubbed_env()
+        if fixed_time:
+            env["PRGEN_FIXED_TIME"] = fixed_time
         proc = subprocess.run(
-            cmd, cwd=str(workdir), env=_scrubbed_env(), capture_output=True, text=True,
+            cmd, cwd=str(workdir), env=env, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=timeout, check=False,
         )
     except subprocess.TimeoutExpired:

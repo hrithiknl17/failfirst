@@ -28,7 +28,7 @@ class Feedback:
     """Why the previous attempt failed, fed into the single retry."""
 
     previous_code: str
-    kind: str  # "rejected" | "failed_on_head" | "passed_on_base"
+    kind: str  # "rejected" | "failed_on_head" | "passed_on_base" | "unstable"
     details: str = ""
     failure_snapshot: str = ""
 
@@ -55,6 +55,11 @@ Hard rules (a test that breaks one is rejected without running):
 - Accessible names come from the DOM text as written in the source; CSS
   text-transform (e.g. uppercase) does not change them.
 - Assert with expect(...), which auto-waits.
+- The test is re-run with the browser clock at night, midday and evening and
+  must give the same result every time. If what you check depends on the date
+  or time of day (greetings, briefs, schedules, "today"), pin the clock FIRST:
+  page.clock.set_fixed_time("2026-01-15T10:00:00") before page.goto, choosing
+  a time at which the changed UI is shown.
 - The test must FAIL on the code before this PR and PASS after it: assert the
   specific NEW behavior (e.g. the new text or new value), not something that
   was already true before.
@@ -137,6 +142,14 @@ def build_prompt(
 def _describe(feedback: Feedback) -> str:
     if feedback.kind == "rejected":
         return "It was rejected before running because it broke these rules:\n" + feedback.details
+    if feedback.kind == "unstable":
+        return (
+            "It passed once but is NOT STABLE — it gave a different result on these checks:\n"
+            + feedback.details[-MAX_FEEDBACK_OUTPUT:]
+            + "\n\nIf the UI depends on the date or time of day, pin the clock with "
+            "page.clock.set_fixed_time(...) before page.goto at a time when the changed UI is shown."
+            + (f"\n\nARIA snapshot where it failed:\n{feedback.failure_snapshot}" if feedback.failure_snapshot else "")
+        )
     if feedback.kind == "passed_on_base":
         return (
             "It PASSED against the base build (the code BEFORE this PR), so it does not check the "

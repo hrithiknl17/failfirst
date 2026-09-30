@@ -2,6 +2,7 @@
 
     python action/cli.py classify --repo ../liquid-financial-sandbox --base master --head my-branch
     python action/cli.py run      --repo ../liquid-financial-sandbox --base master --head my-branch
+    python action/cli.py post     --result out/my-branch/result.json --repo owner/name --pr 12   # dry run
 """
 from __future__ import annotations
 
@@ -21,7 +22,8 @@ from classification import Classification, ClassificationError, classify  # noqa
 from context import DEFAULT_BUILD_CMD, DEFAULT_INSTALL_CMD, DEFAULT_SERVE_CMD  # noqa: E402
 from diff_extraction import DiffError, DiffResult, extract_diff  # noqa: E402
 from llm import FallbackClient, GeminiClient  # noqa: E402
-from pipeline import AppCommands, PipelineResult, run_pipeline  # noqa: E402
+from pipeline import AppCommands, PipelineResult, run_pipeline, suggested_test_path  # noqa: E402
+from pr_comment import GitHubCommenter, PostError, plan_upsert, render_comment  # noqa: E402
 
 _STATUS_LETTER = {"added": "A", "modified": "M", "deleted": "D", "renamed": "R"}
 
@@ -50,13 +52,20 @@ def main(argv=None) -> int:
     p_run.add_argument("--serve-cmd", default=DEFAULT_SERVE_CMD, help="must contain {port}")
     p_run.add_argument("--install-cmd", default=DEFAULT_INSTALL_CMD)
 
+    p_post = sub.add_parser("post", help="render the PR comment; DRY RUN unless --post is given")
+    p_post.add_argument("--result", required=True, help="result.json written by 'run'")
+    p_post.add_argument("--repo", required=True, help="owner/name of the GitHub repo")
+    p_post.add_argument("--pr", required=True, type=int, help="pull request number")
+    p_post.add_argument("--post", action="store_true",
+                        help="actually call the GitHub API (needs GITHUB_TOKEN). Without it nothing is sent.")
+
     args = parser.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except AttributeError:  # not a real stream (e.g. under some test runners)
             pass
-    return _classify(args) if args.command == "classify" else _run(args)
+    return {"classify": _classify, "run": _run, "post": _post}[args.command](args)
 
 
 def _classify(args) -> int:
@@ -74,6 +83,29 @@ def _classify(args) -> int:
         print(json.dumps({"diff": _diff_summary(diff), "classification": asdict(result)}, indent=2))
     else:
         _print_report(diff, result)
+    return 0
+
+
+def _post(args) -> int:
+    result_path = Path(args.result)
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    body = render_comment(result, test_repo_path=suggested_test_path(result.get("head", "")))
+    (result_path.parent / "comment.md").write_text(body, encoding="utf-8")
+
+    if not args.post:
+        plan = plan_upsert(args.repo, args.pr, body)
+        plan_file = result_path.parent / "comment_request.json"
+        plan_file.write_text(json.dumps(plan, indent=2), encoding="utf-8")
+        print(f"DRY RUN - nothing sent to GitHub. Comment: {result_path.parent / 'comment.md'}")
+        print(f"Planned request: {plan_file}")
+        return 0
+
+    try:
+        url = GitHubCommenter(os.environ.get("GITHUB_TOKEN", ""), args.repo, args.pr).upsert(body)
+    except PostError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"Posted: {url}")
     return 0
 
 
