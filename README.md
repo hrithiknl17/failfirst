@@ -157,7 +157,7 @@ python action/cli.py post --result out/your-branch/result.json --repo owner/name
 - **One test per PR, and one retry.**
 - **Tested on one app.** It has been run on five local branches of liquid-financial. It has run end to end in a local GitHub Actions runner (`act`), but not yet on a real GitHub PR. Posting a comment has only been tested against a mock of the GitHub API.
 - **It depends on Gemini being available.** The first end-to-end run failed with HTTP 503 ("model is currently experiencing high demand"). The tool now falls back to other Gemini models, and reports an error if all of them fail.
-- **It is slow on a cold runner.** In the local Actions run, the whole Action took 9m57s. Of that, 5m55s was installing Chromium and its system packages, and generating and verifying took 1m43s. Nothing is cached yet.
+- **It is slow on a cold runner.** In the latest local Actions run, the whole Action took 7m18s. Of that, 4m29s was installing Chromium and its system packages, and generating and verifying took 2m4s, including the 10 stability checks. Nothing is cached yet.
 
 ## Development
 

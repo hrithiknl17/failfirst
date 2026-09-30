@@ -180,3 +180,10 @@ reading the code.
 **Chose:** Clocks are now (day, time) pairs: 03:00, 13:00, 22:00 on a weekday (today if Mon–Fri, else the Friday before) and 21:00 on the Sunday before it — 10 stability checks instead of 8. The generation prompt now names weekly UI as a reason to pin the clock.
 **Why:** Small change (two extra runs per verified test). Rechecked with the exact production gate: both verified tests (`hub-log-button`, `percent-zero`) hold 10/10. The original unpinned hub test, as a control, is still rejected (fails Wed 03:00 and Wed 22:00) — and it *passes* at Sun 21:00, because the Sunday weekly review uses the daytime layout. So Sunday evening really does render differently from a weekday evening in this app. Remaining gap: specific dates, month boundaries and timezones.
 **Ours vs generated:** your call (close the gap if small); implementation my call
+
+## [2026-09-30] Decision: Rewrite local history before the first public push
+**Context:** The repo is about to go public. All commits were authored with a personal email, and every commit's copy of `CLAUDE.md` and `decisions.md` named the reviewer.
+**Options considered:** Fix only the current files (name and email stay readable in history) vs rewrite every commit before anything is pushed.
+**Chose:** Rewrite all commits: author and committer set to `215130962+hrithiknl17@users.noreply.github.com` (ID+username form, so commits still link to the account), and the reviewer's name replaced with "a reviewer" in every commit's files. The "Ours vs generated" notes are unchanged.
+**Why:** Nothing has been pushed, so rewriting is free and safe now and impossible to undo later — once a public commit exists, forks and caches keep it.
+**Ours vs generated:** your call (email and name removal); rewriting history rather than only the latest files was my call
