@@ -1,0 +1,131 @@
+name: PR-scoped verified Playwright tests
+description: >-
+  Reads a pull request's diff, decides whether it changes user-facing behavior,
+  and writes a Playwright test for that change. The test is run against real
+  builds of the PR and its base before anyone sees it; only a verified test is
+  posted.
+
+inputs:
+  gemini-api-key:
+    description: Gemini API key (pass secrets.GEMINI_API_KEY). Empty -> the run is skipped with a note.
+    required: false
+    default: ""
+  github-token:
+    description: Token used to post the PR comment. Needs pull-requests write.
+    required: false
+    default: ${{ github.token }}
+  post-comment:
+    description: "'true' posts/updates the PR comment. Anything else renders it and writes the planned request only (dry run)."
+    required: false
+    default: "true"
+  install-command:
+    description: Installs the app's dependencies (run in the repo root, and in a base worktree if its lockfile differs).
+    required: false
+    default: npm ci --no-audit --no-fund
+  build-command:
+    description: Builds the app for production.
+    required: false
+    default: npm run build
+  serve-command:
+    description: Serves the built app. Must contain {port}.
+    required: false
+    default: npm run preview -- --port {port} --strictPort --host 127.0.0.1
+  python-version:
+    description: Python used to run the generator.
+    required: false
+    default: "3.11"
+
+outputs:
+  status:
+    description: verified | unverified | no_test_needed | error | skipped
+    value: ${{ steps.run.outputs.status || 'skipped' }}
+
+runs:
+  using: composite
+  steps:
+    # 1. Decide before any PR code runs. Fork PRs stop here (no secrets, read-only token).
+    - name: Gate
+      id: gate
+      shell: bash
+      env:
+        PRGEN_HAS_KEY: ${{ inputs.gemini-api-key != '' }}
+      run: python3 "$GITHUB_ACTION_PATH/action/gate.py" --event "$GITHUB_EVENT_PATH" --repository "$GITHUB_REPOSITORY"
+
+    - name: Set up Python
+      if: steps.gate.outputs.skip == 'false'
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install generator and Chromium
+      if: steps.gate.outputs.skip == 'false'
+      shell: bash
+      run: |
+        python -m pip install --disable-pip-version-check -q -r "$GITHUB_ACTION_PATH/requirements.txt"
+        python -m playwright install --with-deps chromium
+
+    # 2. PR code starts running here (install scripts, build). No secrets in this step's env.
+    - name: Install app dependencies
+      if: steps.gate.outputs.skip == 'false'
+      shell: bash
+      env:
+        PRGEN_INSTALL_CMD: ${{ inputs.install-command }}
+      run: $PRGEN_INSTALL_CMD
+
+    # 3. Classify -> build PR + base -> generate -> verify. PR title/body come from the
+    #    event file inside Python, never interpolated into shell.
+    - name: Generate and verify test
+      id: run
+      if: steps.gate.outputs.skip == 'false'
+      shell: bash
+      env:
+        GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
+        PRGEN_INSTALL_CMD: ${{ inputs.install-command }}
+        PRGEN_BUILD_CMD: ${{ inputs.build-command }}
+        PRGEN_SERVE_CMD: ${{ inputs.serve-command }}
+        PRGEN_OUT: ${{ runner.temp }}/prgen
+      run: |
+        set +e
+        python "$GITHUB_ACTION_PATH/action/cli.py" run \
+          --repo "$GITHUB_WORKSPACE" --event "$GITHUB_EVENT_PATH" --out-dir "$PRGEN_OUT" \
+          --install-cmd "$PRGEN_INSTALL_CMD" --build-cmd "$PRGEN_BUILD_CMD" --serve-cmd "$PRGEN_SERVE_CMD"
+        code=$?
+        if [ -f "$PRGEN_OUT/result.json" ]; then
+          status=$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$PRGEN_OUT/result.json")
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          cat "$PRGEN_OUT/comment.md" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        exit $code
+
+    # 4a. Post (or update) the PR comment. Only VERIFIED results carry test code.
+    - name: Post PR comment
+      if: always() && steps.gate.outputs.skip == 'false' && inputs.post-comment == 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        PRGEN_OUT: ${{ runner.temp }}/prgen
+        PRGEN_PR: ${{ github.event.pull_request.number }}
+      run: |
+        [ -f "$PRGEN_OUT/result.json" ] || { echo "no result to post"; exit 0; }
+        python "$GITHUB_ACTION_PATH/action/cli.py" post \
+          --result "$PRGEN_OUT/result.json" --repo "$GITHUB_REPOSITORY" --pr "$PRGEN_PR" --post
+
+    # 4b. Dry run: render the comment and write the request that would have been sent.
+    - name: Render PR comment (dry run, nothing sent)
+      if: always() && steps.gate.outputs.skip == 'false' && inputs.post-comment != 'true'
+      shell: bash
+      env:
+        PRGEN_OUT: ${{ runner.temp }}/prgen
+        PRGEN_PR: ${{ github.event.pull_request.number }}
+      run: |
+        [ -f "$PRGEN_OUT/result.json" ] || { echo "no result to render"; exit 0; }
+        python "$GITHUB_ACTION_PATH/action/cli.py" post \
+          --result "$PRGEN_OUT/result.json" --repo "$GITHUB_REPOSITORY" --pr "$PRGEN_PR"
+
+    - name: Upload run evidence
+      if: always() && steps.gate.outputs.skip == 'false'
+      uses: actions/upload-artifact@v4
+      with:
+        name: prgen-${{ github.event.pull_request.number }}
+        path: ${{ runner.temp }}/prgen
+        if-no-files-found: ignore

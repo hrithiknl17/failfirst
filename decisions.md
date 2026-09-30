@@ -138,3 +138,31 @@ reading the code.
 **Chose:** After a first pass, 2 more reruns on the PR build plus the clock at 03:00 / 13:00 / 22:00 on both builds (PR must pass, base must still fail) — 8 extra runs. Any deviation = failed attempt; the retry is told which checks flipped and to pin the clock with `page.clock.set_fixed_time` before `page.goto`. The generation prompt also asks for that up front for date/time-dependent UI.
 **Why:** A "verified" test that flips is worse than an honest UNVERIFIED — it breaks the pitch. Pinning every test's clock would hide real time-dependence instead of handling it deliberately. Cost is ~8 runs (~1 min locally), paid only by tests that already passed once.
 **Ours vs generated:** joint (you asked for the flakiness check; the clock sweep and gate were my call from what it found)
+
+## [2026-09-30] Decision: Trigger on `pull_request`, never `pull_request_target`
+**Context:** The Action builds and runs the PR's own code (`npm ci`, `npm run build`, the generated test). The trigger decides what that code can reach.
+**Options considered:** `pull_request` vs `pull_request_target`.
+**Chose:** `pull_request` only.
+**Why:** Fork PRs get no secrets under `pull_request`, so they get skipped instead of a test — that's the correct trade against `pull_request_target` running untrusted fork code with a Gemini key and a write token in scope, which is a known attack pattern ("pwn request"). Correction found while building: under `pull_request` a fork PR's `GITHUB_TOKEN` is also read-only, so the "skipped" notice can't be a PR comment — it goes to the run's job summary instead, and the fork check runs *before* any PR code (including `npm ci` install scripts) executes.
+**Ours vs generated:** your call
+
+## [2026-09-30] Decision: Ship as a composite action (`action.yml`) plus an example consumer workflow
+**Context:** The brief puts "the actual Action YAML" in `/.github/workflows/`. But a workflow file in *this* repo runs on *this* repo's PRs (a Python tool, not a web app), and target repos consume an Action via `uses: owner/repo@ref`, which requires `action.yml` at the repo root.
+**Options considered:** Workflow-only in this repo vs composite `action.yml` + consumer workflow vs Docker action.
+**Chose:** `action.yml` (composite: gate → install → run → post → artifact), `examples/liquid-financial/prgen.yml` (what a target repo adds), and `.github/workflows/ci.yml` (this tool's own unit tests).
+**Why:** Composite reuses the runner's Node/Python (no image to build or pull); the target owns Node setup; this repo's own workflow does something meaningful for this repo. Docker actions are slower and can't reuse `setup-node` caches.
+**Ours vs generated:** my call (deviation from the brief's folder note, flagged)
+
+## [2026-09-30] Decision: Workflow hardening for the same-repo path
+**Context:** Same-repo PRs do get the Gemini key and a write token, while running PR code.
+**Options considered:** Rely on "collaborators are trusted" vs also harden what we control.
+**Chose:** `permissions: contents: read, pull-requests: write` only; `persist-credentials: false` on checkout (no token left in `.git/config` for a build script to read); PR title/body read from the event file, never interpolated into shell (`${{ github.event.pull_request.title }}` in a `run:` is script injection); secrets passed only to the step that needs them; build/serve/test subprocesses get an environment with token/secret/key-named variables removed.
+**Why:** Same-repo authors already have write access, so they're inside the trust boundary — the real boundary is "forks never run". The rest is defense in depth against accidents (a build that logs its env, a crafted PR title). Env scrubbing is not a sandbox: a same-user process can still read its parent's environment on Linux. Stated plainly so nobody mistakes it for one.
+**Ours vs generated:** my call
+
+## [2026-09-30] Decision: Incident — edited the act test's workflow copy mid-run; stopped it and restarted clean
+**Context:** While the first local `act` run (same-repo mode) was starting, I ran an actionlint negative check *inside* its working folder. That check used `sed` to rename `post-comment` to `post-commnt` in `.tools/act-target/.github/workflows/prgen-local.yml` and then renamed it back. That file is a generated, git-ignored copy made by `scripts/act_local_test.sh` from `examples/liquid-financial/prgen.yml`. Neither the example, nor `action.yml`, nor the sandbox, nor any GitHub repo was touched. The risk: if act had read the typo'd copy, `post-comment` would have fallen back to its default `"true"` and the real Post step would have run.
+**Options considered:** Reason from timing that act had already parsed the good version, and keep the run; vs stop it and restart from scratch.
+**Chose:** Stopped the run (killed act.exe and removed its container) about 37 s in, while it was still in the Gate step, before any comment step. The rerun deletes and re-clones `act-target` and regenerates the workflow. Verified after restart: the host copy matches a fresh regeneration from the unmodified example; the copy inside the running container has `post-comment: "false"` and the same SHA-256 as the host once Windows CRLFs are stripped (`ff325fe8…`); the example and `action.yml` were last modified at 15:32, before the incident. Added guards to the script: it unsets `GITHUB_TOKEN`/`GH_TOKEN` and refuses to launch act unless the workflow says `post-comment: "false"`. Rule for myself: never touch a folder a running job is using; lint a copy.
+**Why:** The no-remote-writes boundary is worth more than a few minutes of rerun time, and "probably fine because of timing" is not evidence. No token was ever used to post: act was never given `GITHUB_TOKEN` (confirmed unset in my shell and in the running container, along with `GH_TOKEN` and `ACTIONS_RUNTIME_TOKEN`); the post client refuses to start without one, before any HTTP request; and `--post` has never been run this session. Every `post` call so far was a dry run, and the real client has only run in unit tests, against a mock transport with a fake token.
+**Ours vs generated:** my call (my mistake, and my fix)

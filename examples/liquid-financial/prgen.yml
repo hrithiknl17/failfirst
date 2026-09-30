@@ -1,0 +1,38 @@
+# Copy to .github/workflows/prgen.yml in the target repo (e.g. liquid-financial).
+# Needs a repo secret GEMINI_API_KEY. Replace OWNER/prgen with where this
+# Action is published — it isn't yet.
+name: Verified PR tests
+
+on:
+  # pull_request, never pull_request_target: this job runs the PR's own code.
+  # Fork PRs get no secrets and a read-only token, so the gate skips them.
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: prgen-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  prgen:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0              # base...head diff and the base build need history
+          persist-credentials: false  # no token left in .git/config for PR code to read
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: OWNER/prgen@v1
+        with:
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}

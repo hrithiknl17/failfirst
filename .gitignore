@@ -5,3 +5,4 @@ __pycache__/
 .env
 /out/
 test-results/
+.tools/

@@ -46,6 +46,7 @@ class AppCommands:
 class PipelineResult:
     status: str = "error"  # no_test_needed | verified | unverified | error
     head: str = ""
+    name: str = ""  # human name for files, e.g. the branch; defaults to head
     classification: Optional[Classification] = None
     verification: Optional[VerificationResult] = None
     test_file: str = ""
@@ -64,6 +65,7 @@ def run_pipeline(
     llm: Optional[LLMClient],
     out_dir: Path,
     *,
+    name: str = "",
     title: str = "",
     body: str = "",
     notes: str = "",
@@ -71,7 +73,7 @@ def run_pipeline(
     log: Callable[[str], None] = print,
 ) -> PipelineResult:
     out_dir.mkdir(parents=True, exist_ok=True)
-    result = PipelineResult(head=head)
+    result = PipelineResult(head=head, name=name or head)
     try:
         _run(result, repo, base, head, llm, out_dir, title, body, notes, commands, log)
     except (DiffError, ClassificationError, BuildError, GenerationError) as exc:
@@ -80,7 +82,7 @@ def run_pipeline(
     (out_dir / "result.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
     # Rendered offline so every run leaves a reviewable comment; sending it is a separate step.
     (out_dir / "comment.md").write_text(
-        render_comment(data, test_repo_path=suggested_test_path(head)), encoding="utf-8"
+        render_comment(data, test_repo_path=suggested_test_path(result.name)), encoding="utf-8"
     )
     return result
 
@@ -126,7 +128,7 @@ def _run(result, repo, base, head, llm, out_dir, title, body, notes, commands, l
     verification.reason, verification.diagnosis = explain(verification, changes, ctx.aria_snapshot)
     result.status = verification.status
     if verification.test is not None:
-        name = generated_test_filename(head)
+        name = generated_test_filename(result.name)
         if verification.status != "verified":
             name = "UNVERIFIED_" + name
         (out_dir / name).write_text(verification.test.code, encoding="utf-8")

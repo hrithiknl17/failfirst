@@ -42,11 +42,14 @@ def main(argv=None) -> int:
 
     p_run = sub.add_parser("run", help="classify, then generate and verify a test")
     p_run.add_argument("--repo", required=True, help="path to the target git checkout")
-    p_run.add_argument("--base", required=True, help="base ref (e.g. master)")
-    p_run.add_argument("--head", required=True, help="head ref (e.g. the PR branch)")
+    p_run.add_argument("--event", default="", help="GitHub event JSON; supplies base/head/title/body/name")
+    p_run.add_argument("--base", default="", help="base ref (e.g. master)")
+    p_run.add_argument("--head", default="", help="head ref (e.g. the PR branch)")
+    p_run.add_argument("--name", default="", help="name for output files (default: head ref)")
     p_run.add_argument("--title", default="", help="PR title")
     p_run.add_argument("--body", default="", help="PR description")
-    p_run.add_argument("--out", default="out", help="output directory (a subfolder per head ref)")
+    p_run.add_argument("--out", default="out", help="output directory (a subfolder per name)")
+    p_run.add_argument("--out-dir", default="", help="exact output directory (overrides --out)")
     p_run.add_argument("--notes-file", default="", help="optional maintainer notes about the app for the model")
     p_run.add_argument("--build-cmd", default=DEFAULT_BUILD_CMD)
     p_run.add_argument("--serve-cmd", default=DEFAULT_SERVE_CMD, help="must contain {port}")
@@ -89,7 +92,7 @@ def _classify(args) -> int:
 def _post(args) -> int:
     result_path = Path(args.result)
     result = json.loads(result_path.read_text(encoding="utf-8"))
-    body = render_comment(result, test_repo_path=suggested_test_path(result.get("head", "")))
+    body = render_comment(result, test_repo_path=suggested_test_path(result.get("name") or result.get("head", "")))
     (result_path.parent / "comment.md").write_text(body, encoding="utf-8")
 
     if not args.post:
@@ -115,12 +118,33 @@ def _llm():
     return FallbackClient(GeminiClient(), settings.fallback_models())
 
 
+def _pr_from_event(args) -> None:
+    """Fill base/head/name/title/body from the event file. Explicit flags win.
+
+    Reading the PR title and body here, instead of passing them through the
+    workflow as ${{ github.event... }}, keeps attacker-written text out of shell.
+    """
+    if not args.event:
+        return
+    pr = json.loads(Path(args.event).read_text(encoding="utf-8")).get("pull_request") or {}
+    args.base = args.base or (pr.get("base") or {}).get("sha", "")
+    args.head = args.head or (pr.get("head") or {}).get("sha", "")
+    args.name = args.name or (pr.get("head") or {}).get("ref", "")
+    args.title = args.title or pr.get("title") or ""
+    args.body = args.body or pr.get("body") or ""
+
+
 def _run(args) -> int:
+    _pr_from_event(args)
+    if not (args.base and args.head):
+        print("error: --base and --head are required (or pass --event)", file=sys.stderr)
+        return 2
+    name = args.name or args.head
     llm = _llm()
     notes = Path(args.notes_file).read_text(encoding="utf-8") if args.notes_file else ""
-    out_dir = Path(args.out) / re.sub(r"[^A-Za-z0-9._-]+", "_", args.head)
+    out_dir = Path(args.out_dir) if args.out_dir else Path(args.out) / re.sub(r"[^A-Za-z0-9._-]+", "_", name)
     result = run_pipeline(
-        args.repo, args.base, args.head, llm, out_dir,
+        args.repo, args.base, args.head, llm, out_dir, name=name,
         title=args.title, body=args.body, notes=notes,
         commands=AppCommands(build=args.build_cmd, serve=args.serve_cmd, install=args.install_cmd),
         log=lambda msg: print(f"[prgen {time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr, flush=True),

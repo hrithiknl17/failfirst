@@ -8,6 +8,7 @@ rerun reuses a finished build.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -28,6 +29,15 @@ BUILT_MARKER = ".prgen-built"
 DEFAULT_BUILD_CMD = "npm run build"
 DEFAULT_SERVE_CMD = "npm run preview -- --port {port} --strictPort --host 127.0.0.1"
 DEFAULT_INSTALL_CMD = "npm ci --no-audit --no-fund"
+
+
+# The target's install/build/serve run PR code. It gets no token-, secret- or
+# key-named variables. Defense in depth, not a sandbox: see decisions.md.
+_SECRET_NAME = re.compile(r"TOKEN|SECRET|PASSWORD|CREDENTIAL|API_KEY|PRIVATE_KEY", re.IGNORECASE)
+
+
+def child_env() -> dict:
+    return {k: v for k, v in os.environ.items() if not _SECRET_NAME.search(k)}
 
 
 class BuildError(RuntimeError):
@@ -79,7 +89,7 @@ def serve(worktree: Path, *, serve_cmd: str = DEFAULT_SERVE_CMD, ready_timeout: 
     url = f"http://127.0.0.1:{port}"
     log = tempfile.TemporaryFile()
     proc = subprocess.Popen(
-        _argv(serve_cmd.format(port=port)), cwd=str(worktree),
+        _argv(serve_cmd.format(port=port)), cwd=str(worktree), env=child_env(),
         stdout=log, stderr=subprocess.STDOUT, **_new_process_group(),
     )
     try:
@@ -105,7 +115,7 @@ def _needs_install(repo_root: Path, worktree: Path) -> bool:
 def _run(command: str, cwd: Path, timeout: int, what: str) -> None:
     try:
         proc = subprocess.run(
-            _argv(command), cwd=str(cwd), capture_output=True, text=True,
+            _argv(command), cwd=str(cwd), env=child_env(), capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=timeout, check=False,
         )
     except subprocess.TimeoutExpired as exc:
