@@ -7,7 +7,9 @@ UNVERIFIED and never posted as a test.
 """
 from __future__ import annotations
 
+import calendar
 import datetime
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple
@@ -20,8 +22,13 @@ MAX_GENERATIONS = 2  # the first try plus exactly one retry
 STABILITY_RERUNS = 2
 # (day, time): night, day and evening on a weekday catch time-of-day UI; a
 # Sunday evening catches weekly UI (e.g. a review that only shows on Sundays).
-STABILITY_CLOCKS: Tuple[Tuple[str, str], ...] = (
-    ("weekday", "03:00"), ("weekday", "13:00"), ("weekday", "22:00"), ("sunday", "21:00"),
+STABILITY_CLOCKS: Tuple[Tuple[str, ...], ...] = (
+    ("weekday", "03:00"), ("weekday", "13:00"), ("weekday", "22:00"),
+    ("sunday", "21:00"),
+    # Same midday, but the page runs in another timezone (Intl, toLocale*, "today").
+    ("weekday", "13:00", "America/Los_Angeles"),
+    # Minutes before a month rolls over: "this month" totals, month names, due dates.
+    ("monthend", "23:30"),
 )
 
 
@@ -63,7 +70,7 @@ def verify(
     max_generations: int = MAX_GENERATIONS,
     run: Callable[..., RunResult] = run_test,
     stability_reruns: int = STABILITY_RERUNS,
-    stability_clocks: Sequence[Tuple[str, str]] = STABILITY_CLOCKS,
+    stability_clocks: Sequence[Tuple[str, ...]] = STABILITY_CLOCKS,
     today: Optional[str] = None,
 ) -> VerificationResult:
     attempts: List[Attempt] = []
@@ -130,16 +137,35 @@ def clock_dates(today=None) -> Tuple[datetime.date, datetime.date]:
     return weekday, sunday
 
 
-def clock_time(clock: Tuple[str, str], today=None) -> str:
-    """ISO local datetime for a (day, time) clock, e.g. ("sunday", "21:00") -> "2026-09-27T21:00:00"."""
+def last_31st(today=None) -> datetime.date:
+    """The most recent 31st on or before today (a month-end that is also the latest possible day)."""
+    today = _as_date(today)
+    year, month = today.year, today.month
+    while True:
+        if calendar.monthrange(year, month)[1] == 31 and datetime.date(year, month, 31) <= today:
+            return datetime.date(year, month, 31)
+        year, month = (year, month - 1) if month > 1 else (year - 1, 12)
+
+
+def clock_time(clock: Tuple[str, ...], today=None) -> str:
+    """ISO local datetime for a (day, time[, timezone]) clock, e.g. ("sunday", "21:00") -> "2026-09-27T21:00:00".
+
+    The time is wall-clock time in the page's timezone (the runner's, or the clock's third element).
+    """
     weekday, sunday = clock_dates(today)
-    day = sunday if clock[0] == "sunday" else weekday
+    day = {"sunday": sunday, "monthend": last_31st(today)}.get(clock[0], weekday)
     return f"{day.isoformat()}T{clock[1]}:00"
 
 
-def _clock_label(clock: Tuple[str, str], today=None) -> str:
+def clock_timezone(clock: Tuple[str, ...]) -> Optional[str]:
+    return clock[2] if len(clock) > 2 else None
+
+
+def _clock_label(clock: Tuple[str, ...], today=None) -> str:
     day = datetime.date.fromisoformat(clock_time(clock, today)[:10])
-    return f"{day.strftime('%a')} {clock[1]}"
+    when = day.strftime("%a %d %b") if clock[0] == "monthend" else day.strftime("%a")
+    tz = clock_timezone(clock)
+    return f"{when} {clock[1]}" + (f" ({tz})" if tz else "")
 
 
 def _as_date(value) -> datetime.date:
@@ -152,18 +178,19 @@ def _as_date(value) -> datetime.date:
 
 def _stability_check(code, head_url, base_url, workdir, run, reruns, clocks, today):
     """Returns (deviations, first failing output, first failure snapshot)."""
-    checks = [(f"PR build rerun {i + 1}", head_url, None, "passed") for i in range(reruns)]
+    checks = [(f"PR build rerun {i + 1}", head_url, None, None, "passed") for i in range(reruns)]
     for clock in clocks:
         fixed = clock_time(clock, today)
         label = _clock_label(clock, today)
-        checks.append((f"PR build with clock at {label}", head_url, fixed, "passed"))
-        checks.append((f"base build with clock at {label}", base_url, fixed, "failed"))
+        tz = clock_timezone(clock)
+        checks.append((f"PR build with clock at {label}", head_url, fixed, tz, "passed"))
+        checks.append((f"base build with clock at {label}", base_url, fixed, tz, "failed"))
 
     deviations: List[str] = []
     output = snapshot = ""
-    for label, url, fixed, want in checks:
-        folder = workdir / label.replace(" ", "-").replace(":", "")
-        result = run(code, url, folder, fixed_time=fixed)
+    for label, url, fixed, tz, want in checks:
+        folder = workdir / re.sub(r"[^A-Za-z0-9]+", "-", label).strip("-")
+        result = run(code, url, folder, fixed_time=fixed, timezone=tz)
         ok = result.outcome == "passed" if want == "passed" else result.outcome != "passed"
         if not ok:
             deviations.append(f"{label}: {result.outcome}, expected {want}")

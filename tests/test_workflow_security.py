@@ -72,3 +72,31 @@ def test_third_party_actions_are_first_party_github_only(path):
     uses = re.findall(r"uses:\s*([^\s#]+)", (ROOT / path).read_text(encoding="utf-8"))
     for ref in uses:
         assert ref.startswith("actions/") or ref.startswith("hrithiknl17/failfirst@"), ref
+
+
+def _index(name):
+    return next(i for i, s in enumerate(STEPS) if s.get("name") == name)
+
+
+def test_caches_are_saved_before_any_pr_code_runs():
+    # "Install app dependencies" is the first step that executes the PR's own code.
+    first_pr_code = _index("Install app dependencies")
+    saves = [i for i, s in enumerate(STEPS) if s.get("uses", "").startswith("actions/cache/save@")]
+    restores = [i for i, s in enumerate(STEPS) if s.get("uses", "").startswith("actions/cache/restore@")]
+    assert len(saves) == 2 and len(restores) == 2
+    assert all(i < first_pr_code for i in saves + restores)
+    # Plain actions/cache would save at job end, after PR code ran.
+    assert not any(s.get("uses", "").startswith("actions/cache@") for s in STEPS)
+
+
+def test_cache_keys_use_no_pr_controlled_data():
+    for s in STEPS:
+        if s.get("uses", "").startswith("actions/cache/"):
+            key = s["with"]["key"]
+            assert "github.event" not in key and "head_ref" not in key, s["name"]
+
+
+def test_saves_only_on_a_cache_miss():
+    for s in STEPS:
+        if s.get("uses", "").startswith("actions/cache/save@"):
+            assert "cache-hit != 'true'" in s["if"], s["name"]

@@ -23,7 +23,9 @@ _ENV_KEEP = (
 # Captures what the page looked like when the test failed; that snapshot is
 # the DOM the single retry gets to see.
 CONFTEST = '''\
+import datetime
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -35,9 +37,22 @@ def _failfirst_fail_fast(page):
     # Stability checks re-run the test at other wall-clock times. A test that
     # pins its own clock overrides this, which is exactly what makes it stable.
     fixed = os.environ.get("FAILFIRST_FIXED_TIME")
-    if fixed:
+    if fixed and os.environ.get("FAILFIRST_TIMEZONE"):
+        # A bare ISO time is read in this process's timezone, not the page's.
+        # Resolve it as wall-clock time in the page's own timezone instead.
+        parts = [int(x) for x in re.split(r"[-T:]", fixed)]
+        ms = page.evaluate("([y, mo, d, h, mi, s]) => new Date(y, mo - 1, d, h, mi, s).getTime()", parts)
+        page.clock.set_fixed_time(datetime.datetime.fromtimestamp(ms / 1000, tz=datetime.timezone.utc))
+    elif fixed:
         page.clock.set_fixed_time(fixed)
     yield
+
+
+@pytest.fixture(scope="session")
+def browser_context_args(browser_context_args):
+    # Stability checks also run the page in another timezone.
+    tz = os.environ.get("FAILFIRST_TIMEZONE")
+    return {**browser_context_args, "timezone_id": tz} if tz else browser_context_args
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -65,9 +80,11 @@ class RunResult:
 
 
 def run_test(
-    code: str, base_url: str, workdir: Path, *, timeout: int = 180, fixed_time: Optional[str] = None
+    code: str, base_url: str, workdir: Path, *, timeout: int = 180,
+    fixed_time: Optional[str] = None, timezone: Optional[str] = None,
 ) -> RunResult:
-    """Run ``code`` against ``base_url``. ``fixed_time`` (ISO local time) fakes the browser clock."""
+    """Run ``code`` against ``base_url``. ``fixed_time`` (ISO local time) fakes the browser clock;
+    ``timezone`` (IANA name) sets the page's timezone."""
     workdir.mkdir(parents=True, exist_ok=True)
     (workdir / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
     (workdir / "conftest.py").write_text(CONFTEST, encoding="utf-8")
@@ -85,6 +102,11 @@ def run_test(
         env = _scrubbed_env()
         if fixed_time:
             env["FAILFIRST_FIXED_TIME"] = fixed_time
+        if timezone:
+            # Move the whole run, not just the page: the test process and the
+            # browser share one timezone on any real machine.
+            env["FAILFIRST_TIMEZONE"] = timezone
+            env["TZ"] = timezone
         proc = subprocess.run(
             cmd, cwd=str(workdir), env=env, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=timeout, check=False,

@@ -56,7 +56,8 @@ Hard rules (a test that breaks one is rejected without running):
   text-transform (e.g. uppercase) does not change them.
 - Assert with expect(...), which auto-waits.
 - The test is re-run with the browser clock at night, midday and evening on a
-  weekday, and on a Sunday evening, and must give the same result every time.
+  weekday, on a Sunday evening, at 23:30 on the last day of a month, and with
+  the page in another timezone. It must give the same result every time.
   If what you check depends on the date, the day of the week or the time of
   day (greetings, briefs, weekly reviews, schedules, "today"), pin the clock FIRST:
   page.clock.set_fixed_time("2026-01-15T10:00:00") before page.goto, choosing

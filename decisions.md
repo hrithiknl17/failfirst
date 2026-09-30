@@ -222,3 +222,17 @@ reading the code.
 **Chose:** MIT, copyright "hrithiknl17" (the GitHub handle; no legal name was given, so none was invented). Declared in `pyproject.toml` and linked from the README.
 **Why:** MIT is the most common licence for GitHub Actions and the simplest for users to accept. Apache-2.0 adds an explicit patent grant, which matters little for a tool like this.
 **Ours vs generated:** your call (MIT); copyright holder wording my call
+
+## [2026-09-30] Decision: Cache pip and Chromium, saved before any PR code runs
+**Context:** Every run reinstalled the generator and downloaded Chromium (4m29s of a 7m18s local `act` run; 53s of a 2m19s GitHub run).
+**Options considered:** `actions/cache` (restores at the start, saves at job end) vs `setup-python`'s built-in pip cache vs explicit `actions/cache/restore` + `actions/cache/save`.
+**Chose:** Explicit restore/save pairs for the pip cache (key: OS, Python version, SHA-256 of this action's `requirements.txt`) and for `~/.cache/ms-playwright` (key: OS, installed Playwright version). Both saves happen before "Install app dependencies", the first step that runs PR code. On a Chromium cache hit, `playwright install-deps` still installs the system packages, which can't be cached this way. Keys are computed with `sha256sum` in a shell step.
+**Why:** Plain `actions/cache` saves at job end, after the PR's install scripts and build have run on the same machine, so a PR could plant files in a cache a later run restores. Saving earlier closes that. `hashFiles()` and `setup-python`'s cache only see the workspace, and this action's own `requirements.txt` lives outside it, in the runner's `_actions` folder.
+**Ours vs generated:** your call (cache pip and Chromium, keyed on requirements and Playwright version); restore/save split and save-before-PR-code my call
+
+## [2026-09-30] Decision: Stability gate adds another timezone and a month-end — and moves the whole run, not just the page
+**Context:** README listed timezones and month boundaries as gaps.
+**Options considered:** Page timezone only (`timezone_id`) vs the whole test run in that timezone (`timezone_id` plus `TZ` for the pytest process).
+**Chose:** Two more clocks, both builds each: weekday 13:00 in `America/Los_Angeles`, and 23:30 on the most recent 31st on or before today (Aug 31 when run on Sep 30). 14 stability checks instead of 10. The timezone check sets both the page's `timezone_id` and `TZ` for the test process.
+**Why:** Two things measured, not assumed. (1) Playwright reads a bare time string like `2026-09-30T13:00:00` in the *test process's* timezone: with only the page in Los Angeles, "13:00" landed as 00:30 LA. Fixed by resolving the time inside the page when a timezone is set; checked in a real browser: 13:00 LA shows hour 13, the month-end shows day 31 hour 23. (2) With only the page moved, the verified hub test — which pins its own clock with a bare string — was rejected, because 10:00 in the India-based process is 20:30 the previous evening in LA. That mismatch never happens on a real machine, where the process and the browser share one timezone, so it would reject correct tests. With `TZ` set too, the self-pinned test sees 10:00 in LA (checked on Windows), and both verified tests hold 14/14.
+**Ours vs generated:** your call (add a timezone and a month-end); whole-run timezone my call, from the measured failure

@@ -27,7 +27,7 @@ class Runner:
         self.outcomes = outcomes
         self.calls = []
 
-    def __call__(self, code, url, workdir: Path, fixed_time=None):
+    def __call__(self, code, url, workdir: Path, fixed_time=None, timezone=None):
         which = "pr" if workdir.name.endswith("-pr") else "base"
         self.calls.append((code, which))
         outcome = self.outcomes[(code, which)]
@@ -101,8 +101,8 @@ class ClockRunner:
         self.pinned = set(pinned_codes)  # codes that pin their own clock -> always pass on PR
         self.calls = []
 
-    def __call__(self, code, url, workdir, fixed_time=None):
-        self.calls.append((url, fixed_time))
+    def __call__(self, code, url, workdir, fixed_time=None, timezone=None):
+        self.calls.append((url, fixed_time, timezone))
         if url == "http://base":
             return RunResult("failed", "E   element(s) not found")
         if code in self.pinned or fixed_time is None:
@@ -114,7 +114,7 @@ class ClockRunner:
 
 def gated(gen, runner, tmp_path):
     return verify(gen, head_url="http://pr", base_url="http://base", workdir=tmp_path, run=runner,
-                  stability_reruns=2, today="2026-09-30")  # default clocks: Wed 03/13/22:00 + Sun 21:00
+                  stability_reruns=2, today="2026-09-30")  # default clocks; 2026-09-30 is a Wednesday
 
 
 def test_time_dependent_test_is_not_verified(tmp_path):
@@ -125,6 +125,8 @@ def test_time_dependent_test_is_not_verified(tmp_path):
     assert "PR build with clock at Wed 03:00: failed, expected passed" in result.reason
     assert "PR build with clock at Wed 22:00: failed, expected passed" in result.reason
     assert "PR build with clock at Sun 21:00: failed, expected passed" in result.reason
+    assert "PR build with clock at Mon 31 Aug 23:30: failed, expected passed" in result.reason
+    assert "Wed 13:00 (America/Los_Angeles)" not in result.reason  # midday passes in any timezone
     assert "13:00" not in result.reason
     fb = gen.feedback[1]
     assert fb.kind == "unstable" and "03:00" in fb.details
@@ -136,11 +138,13 @@ def test_retry_that_pins_the_clock_is_verified(tmp_path):
     result = gated(gen, runner, tmp_path)
     assert result.status == "verified"
     assert result.test.code == OTHER
-    assert "10 stability checks" in result.reason
-    assert "Wed 03:00, Wed 13:00, Wed 22:00, Sun 21:00" in result.reason
+    assert "14 stability checks" in result.reason
+    assert "Wed 03:00, Wed 13:00, Wed 22:00, Sun 21:00, Wed 13:00 (America/Los_Angeles), Mon 31 Aug 23:30" in result.reason
     # 2 reruns + 3 clocks x (PR + base), plus the first PR and base run, for the verified attempt
-    assert ("http://base", "2026-09-30T22:00:00") in runner.calls
-    assert ("http://base", "2026-09-27T21:00:00") in runner.calls
+    assert ("http://base", "2026-09-30T22:00:00", None) in runner.calls
+    assert ("http://base", "2026-09-27T21:00:00", None) in runner.calls
+    assert ("http://base", "2026-09-30T13:00:00", "America/Los_Angeles") in runner.calls
+    assert ("http://base", "2026-08-31T23:30:00", None) in runner.calls
 
 
 @pytest.mark.parametrize("today, weekday, sunday", [
@@ -155,3 +159,14 @@ def test_clock_dates_pick_a_weekday_and_the_sunday_before_it(today, weekday, sun
     got = clock_dates(today)
     assert (got[0].isoformat(), got[1].isoformat()) == (weekday, sunday)
     assert got[0].weekday() < 5 and got[1].weekday() == 6
+
+
+@pytest.mark.parametrize("today, expected", [
+    ("2026-09-30", "2026-08-31"),  # September has 30 days -> August 31
+    ("2026-08-31", "2026-08-31"),  # the day itself
+    ("2026-03-15", "2026-01-31"),  # skips February
+    ("2026-01-10", "2025-12-31"),  # crosses the year
+])
+def test_last_31st(today, expected):
+    from verification.verify import last_31st
+    assert last_31st(today).isoformat() == expected

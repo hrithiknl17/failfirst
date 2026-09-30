@@ -74,4 +74,5 @@ grep -q 'post-comment: "false"' .github/workflows/failfirst-local.yml || { echo 
   -e "$TOOLS/event-$MODE.json" \
   -W .github/workflows/failfirst-local.yml \
   -s GEMINI_API_KEY \
-  --artifact-server-path "$TOOLS/act-artifacts-$MODE"
+  --artifact-server-path "$TOOLS/act-artifacts-$MODE" \
+  --cache-server-path "$TOOLS/act-cache"

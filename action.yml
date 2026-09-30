@@ -56,12 +56,68 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
-    - name: Install generator and Chromium
+    # Caches are restored and saved explicitly, and saved BEFORE any PR code runs
+    # (install scripts, build), so a PR cannot plant anything in them. Keys are
+    # computed in shell because hashFiles() only sees the workspace, and this
+    # action's own files live outside it.
+    - name: Cache keys
+      id: keys
+      if: steps.gate.outputs.skip == 'false'
+      shell: bash
+      run: |
+        echo "req=$(sha256sum "$GITHUB_ACTION_PATH/requirements.txt" | cut -c1-16)" >> "$GITHUB_OUTPUT"
+        echo "pip-dir=$(python -m pip cache dir)" >> "$GITHUB_OUTPUT"
+
+    - name: Restore pip cache
+      id: pip-cache
+      if: steps.gate.outputs.skip == 'false'
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.keys.outputs.pip-dir }}
+        key: failfirst-pip-${{ runner.os }}-py${{ inputs.python-version }}-${{ steps.keys.outputs.req }}
+
+    - name: Install generator
+      id: generator
       if: steps.gate.outputs.skip == 'false'
       shell: bash
       run: |
         python -m pip install --disable-pip-version-check -q -r "$GITHUB_ACTION_PATH/requirements.txt"
-        python -m playwright install --with-deps chromium
+        echo "playwright=$(python -c 'from importlib.metadata import version; print(version("playwright"))')" >> "$GITHUB_OUTPUT"
+
+    - name: Save pip cache
+      if: steps.gate.outputs.skip == 'false' && steps.pip-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ steps.keys.outputs.pip-dir }}
+        key: ${{ steps.pip-cache.outputs.cache-primary-key }}
+
+    - name: Restore Chromium cache
+      id: browser-cache
+      if: steps.gate.outputs.skip == 'false'
+      uses: actions/cache/restore@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: failfirst-chromium-${{ runner.os }}-playwright${{ steps.generator.outputs.playwright }}
+
+    - name: Install Chromium
+      if: steps.gate.outputs.skip == 'false'
+      shell: bash
+      env:
+        FAILFIRST_BROWSER_CACHED: ${{ steps.browser-cache.outputs.cache-hit }}
+      run: |
+        if [ "$FAILFIRST_BROWSER_CACHED" = "true" ]; then
+          # Browser restored from cache; its system packages still have to be installed.
+          python -m playwright install-deps chromium
+        else
+          python -m playwright install --with-deps chromium
+        fi
+
+    - name: Save Chromium cache
+      if: steps.gate.outputs.skip == 'false' && steps.browser-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ steps.browser-cache.outputs.cache-primary-key }}
 
     # 2. PR code starts running here (install scripts, build). No secrets in this step's env.
     - name: Install app dependencies
