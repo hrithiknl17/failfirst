@@ -1,4 +1,4 @@
-name: PR-scoped verified Playwright tests
+name: failfirst
 description: >-
   Reads a pull request's diff, decides whether it changes user-facing behavior,
   and writes a Playwright test for that change. The test is run against real
@@ -48,7 +48,7 @@ runs:
       id: gate
       shell: bash
       env:
-        PRGEN_HAS_KEY: ${{ inputs.gemini-api-key != '' }}
+        FAILFIRST_HAS_KEY: ${{ inputs.gemini-api-key != '' }}
       run: python3 "$GITHUB_ACTION_PATH/action/gate.py" --event "$GITHUB_EVENT_PATH" --repository "$GITHUB_REPOSITORY"
 
     - name: Set up Python
@@ -69,8 +69,8 @@ runs:
       if: steps.gate.outputs.skip == 'false'
       shell: bash
       env:
-        PRGEN_INSTALL_CMD: ${{ inputs.install-command }}
-      run: $PRGEN_INSTALL_CMD
+        FAILFIRST_INSTALL_CMD: ${{ inputs.install-command }}
+      run: $FAILFIRST_INSTALL_CMD
 
     # 3. Classify -> build PR + base -> generate -> verify. PR title/body come from the
     #    event file inside Python, never interpolated into shell.
@@ -80,20 +80,20 @@ runs:
       shell: bash
       env:
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
-        PRGEN_INSTALL_CMD: ${{ inputs.install-command }}
-        PRGEN_BUILD_CMD: ${{ inputs.build-command }}
-        PRGEN_SERVE_CMD: ${{ inputs.serve-command }}
-        PRGEN_OUT: ${{ runner.temp }}/prgen
+        FAILFIRST_INSTALL_CMD: ${{ inputs.install-command }}
+        FAILFIRST_BUILD_CMD: ${{ inputs.build-command }}
+        FAILFIRST_SERVE_CMD: ${{ inputs.serve-command }}
+        FAILFIRST_OUT: ${{ runner.temp }}/failfirst
       run: |
         set +e
         python "$GITHUB_ACTION_PATH/action/cli.py" run \
-          --repo "$GITHUB_WORKSPACE" --event "$GITHUB_EVENT_PATH" --out-dir "$PRGEN_OUT" \
-          --install-cmd "$PRGEN_INSTALL_CMD" --build-cmd "$PRGEN_BUILD_CMD" --serve-cmd "$PRGEN_SERVE_CMD"
+          --repo "$GITHUB_WORKSPACE" --event "$GITHUB_EVENT_PATH" --out-dir "$FAILFIRST_OUT" \
+          --install-cmd "$FAILFIRST_INSTALL_CMD" --build-cmd "$FAILFIRST_BUILD_CMD" --serve-cmd "$FAILFIRST_SERVE_CMD"
         code=$?
-        if [ -f "$PRGEN_OUT/result.json" ]; then
-          status=$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$PRGEN_OUT/result.json")
+        if [ -f "$FAILFIRST_OUT/result.json" ]; then
+          status=$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$FAILFIRST_OUT/result.json")
           echo "status=$status" >> "$GITHUB_OUTPUT"
-          cat "$PRGEN_OUT/comment.md" >> "$GITHUB_STEP_SUMMARY"
+          cat "$FAILFIRST_OUT/comment.md" >> "$GITHUB_STEP_SUMMARY"
         fi
         exit $code
 
@@ -103,29 +103,29 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
-        PRGEN_OUT: ${{ runner.temp }}/prgen
-        PRGEN_PR: ${{ github.event.pull_request.number }}
+        FAILFIRST_OUT: ${{ runner.temp }}/failfirst
+        FAILFIRST_PR: ${{ github.event.pull_request.number }}
       run: |
-        [ -f "$PRGEN_OUT/result.json" ] || { echo "no result to post"; exit 0; }
+        [ -f "$FAILFIRST_OUT/result.json" ] || { echo "no result to post"; exit 0; }
         python "$GITHUB_ACTION_PATH/action/cli.py" post \
-          --result "$PRGEN_OUT/result.json" --repo "$GITHUB_REPOSITORY" --pr "$PRGEN_PR" --post
+          --result "$FAILFIRST_OUT/result.json" --repo "$GITHUB_REPOSITORY" --pr "$FAILFIRST_PR" --post
 
     # 4b. Dry run: render the comment and write the request that would have been sent.
     - name: Render PR comment (dry run, nothing sent)
       if: always() && steps.gate.outputs.skip == 'false' && inputs.post-comment != 'true'
       shell: bash
       env:
-        PRGEN_OUT: ${{ runner.temp }}/prgen
-        PRGEN_PR: ${{ github.event.pull_request.number }}
+        FAILFIRST_OUT: ${{ runner.temp }}/failfirst
+        FAILFIRST_PR: ${{ github.event.pull_request.number }}
       run: |
-        [ -f "$PRGEN_OUT/result.json" ] || { echo "no result to render"; exit 0; }
+        [ -f "$FAILFIRST_OUT/result.json" ] || { echo "no result to render"; exit 0; }
         python "$GITHUB_ACTION_PATH/action/cli.py" post \
-          --result "$PRGEN_OUT/result.json" --repo "$GITHUB_REPOSITORY" --pr "$PRGEN_PR"
+          --result "$FAILFIRST_OUT/result.json" --repo "$GITHUB_REPOSITORY" --pr "$FAILFIRST_PR"
 
     - name: Upload run evidence
       if: always() && steps.gate.outputs.skip == 'false'
       uses: actions/upload-artifact@v4
       with:
-        name: prgen-${{ github.event.pull_request.number }}
-        path: ${{ runner.temp }}/prgen
+        name: failfirst-${{ github.event.pull_request.number }}
+        path: ${{ runner.temp }}/failfirst
         if-no-files-found: ignore

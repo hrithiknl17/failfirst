@@ -39,13 +39,13 @@ UNVERIFIED = {
 # --- rendering ---------------------------------------------------------------
 
 def test_verified_comment_has_badge_evidence_code_and_patch():
-    body = render_comment(VERIFIED, test_repo_path="e2e/test_prgen_demo_percent_zero.py")
+    body = render_comment(VERIFIED, test_repo_path="e2e/test_failfirst_demo_percent_zero.py")
     assert body.startswith(MARKER)
     assert "✅ Playwright test — VERIFIED" in body
     assert "fails, as it should" in body
     assert "held through 8 stability checks" in body
     assert "```python\n" + CODE.rstrip() in body
-    assert "+++ b/e2e/test_prgen_demo_percent_zero.py" in body
+    assert "+++ b/e2e/test_failfirst_demo_percent_zero.py" in body
 
 
 def test_unverified_comment_explains_and_never_shows_code():
@@ -78,9 +78,9 @@ def test_code_cannot_break_out_of_its_fence():
 
 def test_patch_applies_with_git(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    (tmp_path / "prgen.patch").write_text(new_file_patch("e2e/test_prgen_x.py", CODE), encoding="utf-8")
-    subprocess.run(["git", "apply", "prgen.patch"], cwd=tmp_path, check=True)
-    assert (tmp_path / "e2e" / "test_prgen_x.py").read_text(encoding="utf-8") == CODE
+    (tmp_path / "failfirst.patch").write_text(new_file_patch("e2e/test_failfirst_x.py", CODE), encoding="utf-8")
+    subprocess.run(["git", "apply", "failfirst.patch"], cwd=tmp_path, check=True)
+    assert (tmp_path / "e2e" / "test_failfirst_x.py").read_text(encoding="utf-8") == CODE
 
 
 # --- delivery: dry run makes no network calls --------------------------------
@@ -136,7 +136,7 @@ def test_creates_comment_when_none_exists():
     assert calls[-1] == ("POST", "/repos/o/r/issues/3/comments")
 
 
-def test_updates_previous_prgen_comment_instead_of_spamming():
+def test_updates_previous_failfirst_comment_instead_of_spamming():
     transport, calls = fake_github([{"id": 42, "body": MARKER + " old"}])
     GitHubCommenter("t", "o/r", 3, transport=transport).upsert(MARKER + " new")
     assert calls[-1] == ("PATCH", "/repos/o/r/issues/comments/42")

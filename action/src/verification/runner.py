@@ -30,11 +30,11 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _prgen_fail_fast(page):
+def _failfirst_fail_fast(page):
     page.set_default_timeout(10_000)
     # Stability checks re-run the test at other wall-clock times. A test that
     # pins its own clock overrides this, which is exactly what makes it stable.
-    fixed = os.environ.get("PRGEN_FIXED_TIME")
+    fixed = os.environ.get("FAILFIRST_FIXED_TIME")
     if fixed:
         page.clock.set_fixed_time(fixed)
     yield
@@ -84,7 +84,7 @@ def run_test(
     try:
         env = _scrubbed_env()
         if fixed_time:
-            env["PRGEN_FIXED_TIME"] = fixed_time
+            env["FAILFIRST_FIXED_TIME"] = fixed_time
         proc = subprocess.run(
             cmd, cwd=str(workdir), env=env, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=timeout, check=False,

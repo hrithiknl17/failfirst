@@ -46,7 +46,7 @@ def run_gate(tmp_path, payload, has_key):
     event_file = tmp_path / "event.json"
     event_file.write_text(json.dumps(payload), encoding="utf-8")
     output, summary = tmp_path / "output", tmp_path / "summary"
-    env = {**os.environ, "PRGEN_HAS_KEY": "true" if has_key else "false", "GITHUB_OUTPUT": str(output),
+    env = {**os.environ, "FAILFIRST_HAS_KEY": "true" if has_key else "false", "GITHUB_OUTPUT": str(output),
            "GITHUB_STEP_SUMMARY": str(summary)}
     subprocess.run([sys.executable, str(ROOT / "action" / "gate.py"), "--event", str(event_file),
                     "--repository", REPO], env=env, check=True, capture_output=True)

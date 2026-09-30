@@ -1,8 +1,8 @@
 """End to end: diff -> classify -> build both refs -> context -> generate + verify.
 
 Writes ``result.json`` plus the test file into ``out_dir``. A verified test is
-written as ``test_prgen_<branch>.py``; an unverified one only as
-``UNVERIFIED_test_prgen_<branch>.py`` for debugging — it is never posted.
+written as ``test_failfirst_<branch>.py``; an unverified one only as
+``UNVERIFIED_test_failfirst_<branch>.py`` for debugging — it is never posted.
 """
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ class PipelineResult:
 
 def generated_test_filename(head: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "_", head.lower()).strip("_")[:60] or "change"
-    return f"test_prgen_{slug}.py"
+    return f"test_failfirst_{slug}.py"
 
 
 def run_pipeline(

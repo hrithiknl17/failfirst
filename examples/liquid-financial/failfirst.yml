@@ -1,5 +1,5 @@
-# Copy to .github/workflows/prgen.yml in the target repo (e.g. liquid-financial).
-# Needs a repo secret GEMINI_API_KEY. Replace OWNER/prgen with where this
+# Copy to .github/workflows/failfirst.yml in the target repo (e.g. liquid-financial).
+# Needs a repo secret GEMINI_API_KEY. Replace OWNER/failfirst with where this
 # Action is published — it isn't yet.
 name: Verified PR tests
 
@@ -14,11 +14,11 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: prgen-${{ github.event.pull_request.number }}
+  group: failfirst-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  prgen:
+  failfirst:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -33,6 +33,6 @@ jobs:
         with:
           node-version: 22
 
-      - uses: OWNER/prgen@v1
+      - uses: OWNER/failfirst@v1
         with:
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}

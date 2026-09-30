@@ -2,7 +2,7 @@
 
 VERIFIED means: passed the safety check, PASSED on the PR build, FAILED on the
 base build, and then held that result through the stability gate (reruns plus
-the browser clock set to other times of day). Anything else after the retry is
+the browser clock set to other times of day, and to a Sunday evening). Anything else after the retry is
 UNVERIFIED and never posted as a test.
 """
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence, Tuple
 
 from generation import Feedback, GeneratedTest, check_test_code
 
@@ -18,8 +18,11 @@ from .runner import RunResult, run_test
 
 MAX_GENERATIONS = 2  # the first try plus exactly one retry
 STABILITY_RERUNS = 2
-# Night, day, evening: catches UIs that change with the time of day.
-STABILITY_CLOCKS = ("03:00", "13:00", "22:00")
+# (day, time): night, day and evening on a weekday catch time-of-day UI; a
+# Sunday evening catches weekly UI (e.g. a review that only shows on Sundays).
+STABILITY_CLOCKS: Tuple[Tuple[str, str], ...] = (
+    ("weekday", "03:00"), ("weekday", "13:00"), ("weekday", "22:00"), ("sunday", "21:00"),
+)
 
 
 @dataclass
@@ -60,7 +63,7 @@ def verify(
     max_generations: int = MAX_GENERATIONS,
     run: Callable[..., RunResult] = run_test,
     stability_reruns: int = STABILITY_RERUNS,
-    stability_clocks: Sequence[str] = STABILITY_CLOCKS,
+    stability_clocks: Sequence[Tuple[str, str]] = STABILITY_CLOCKS,
     today: Optional[str] = None,
 ) -> VerificationResult:
     attempts: List[Attempt] = []
@@ -93,7 +96,7 @@ def verify(
 
         deviations, output, snapshot = _stability_check(
             test.code, head_url, base_url, workdir / f"attempt{number}-stability", run,
-            stability_reruns, stability_clocks, today or datetime.date.today().isoformat(),
+            stability_reruns, stability_clocks, today or datetime.date.today(),
         )
         if deviations:
             attempts.append(Attempt(number, test, "unstable", head=head, base=base, stability=deviations))
@@ -106,7 +109,7 @@ def verify(
         return VerificationResult(
             "verified",
             f"passes on the PR build and fails on the base build, and held through {checks} stability checks "
-            f"({stability_reruns} reruns, clock at {', '.join(stability_clocks)})",
+            f"({stability_reruns} reruns, clock at {', '.join(_clock_label(c, today) for c in stability_clocks)})",
             test, attempts, diagnosis="verified",
         )
 
@@ -119,13 +122,42 @@ def verify(
     )
 
 
+def clock_dates(today=None) -> Tuple[datetime.date, datetime.date]:
+    """(weekday, sunday) to fake: today if Mon-Fri, else the Friday before; and the Sunday before that."""
+    today = _as_date(today)
+    weekday = today if today.weekday() < 5 else today - datetime.timedelta(days=today.weekday() - 4)
+    sunday = weekday - datetime.timedelta(days=weekday.weekday() + 1)
+    return weekday, sunday
+
+
+def clock_time(clock: Tuple[str, str], today=None) -> str:
+    """ISO local datetime for a (day, time) clock, e.g. ("sunday", "21:00") -> "2026-09-27T21:00:00"."""
+    weekday, sunday = clock_dates(today)
+    day = sunday if clock[0] == "sunday" else weekday
+    return f"{day.isoformat()}T{clock[1]}:00"
+
+
+def _clock_label(clock: Tuple[str, str], today=None) -> str:
+    day = datetime.date.fromisoformat(clock_time(clock, today)[:10])
+    return f"{day.strftime('%a')} {clock[1]}"
+
+
+def _as_date(value) -> datetime.date:
+    if value is None:
+        return datetime.date.today()
+    if isinstance(value, str):
+        return datetime.date.fromisoformat(value)
+    return value
+
+
 def _stability_check(code, head_url, base_url, workdir, run, reruns, clocks, today):
     """Returns (deviations, first failing output, first failure snapshot)."""
     checks = [(f"PR build rerun {i + 1}", head_url, None, "passed") for i in range(reruns)]
     for clock in clocks:
-        fixed = f"{today}T{clock}:00"
-        checks.append((f"PR build with clock at {clock}", head_url, fixed, "passed"))
-        checks.append((f"base build with clock at {clock}", base_url, fixed, "failed"))
+        fixed = clock_time(clock, today)
+        label = _clock_label(clock, today)
+        checks.append((f"PR build with clock at {label}", head_url, fixed, "passed"))
+        checks.append((f"base build with clock at {label}", base_url, fixed, "failed"))
 
     deviations: List[str] = []
     output = snapshot = ""

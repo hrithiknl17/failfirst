@@ -1,5 +1,5 @@
 [project]
-name = "pr-test-generator"
+name = "failfirst"
 version = "0.1.0"
 description = "PR-scoped, verified Playwright test generator (GitHub Action)"
 requires-python = ">=3.9"

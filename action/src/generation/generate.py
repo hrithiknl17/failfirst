@@ -55,9 +55,10 @@ Hard rules (a test that breaks one is rejected without running):
 - Accessible names come from the DOM text as written in the source; CSS
   text-transform (e.g. uppercase) does not change them.
 - Assert with expect(...), which auto-waits.
-- The test is re-run with the browser clock at night, midday and evening and
-  must give the same result every time. If what you check depends on the date
-  or time of day (greetings, briefs, schedules, "today"), pin the clock FIRST:
+- The test is re-run with the browser clock at night, midday and evening on a
+  weekday, and on a Sunday evening, and must give the same result every time.
+  If what you check depends on the date, the day of the week or the time of
+  day (greetings, briefs, weekly reviews, schedules, "today"), pin the clock FIRST:
   page.clock.set_fixed_time("2026-01-15T10:00:00") before page.goto, choosing
   a time at which the changed UI is shown.
 - The test must FAIL on the code before this PR and PASS after it: assert the

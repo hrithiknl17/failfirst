@@ -1,6 +1,6 @@
 """Check out, build and serve one ref of the target repo.
 
-Each ref gets a git worktree at ``<repo>/.prgen/worktrees/<sha>``. Nesting it
+Each ref gets a git worktree at ``<repo>/.failfirst/worktrees/<sha>``. Nesting it
 inside the checkout means Node finds the checkout's ``node_modules`` by walking
 up, so most builds need no install. Worktrees are keyed by commit SHA, so a
 rerun reuses a finished build.
@@ -23,8 +23,8 @@ from typing import Iterator, List
 
 import httpx
 
-WORKTREE_DIR = Path(".prgen") / "worktrees"
-BUILT_MARKER = ".prgen-built"
+WORKTREE_DIR = Path(".failfirst") / "worktrees"
+BUILT_MARKER = ".failfirst-built"
 
 DEFAULT_BUILD_CMD = "npm run build"
 DEFAULT_SERVE_CMD = "npm run preview -- --port {port} --strictPort --host 127.0.0.1"
@@ -140,9 +140,9 @@ def _exclude_worktree_dir(repo: str) -> None:
     exclude = common / "info" / "exclude"
     exclude.parent.mkdir(parents=True, exist_ok=True)
     existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
-    if ".prgen/" not in existing.splitlines():
+    if ".failfirst/" not in existing.splitlines():
         with exclude.open("a", encoding="utf-8") as fh:
-            fh.write(("" if existing.endswith("\n") or not existing else "\n") + ".prgen/\n")
+            fh.write(("" if existing.endswith("\n") or not existing else "\n") + ".failfirst/\n")
 
 
 def _free_port() -> int:

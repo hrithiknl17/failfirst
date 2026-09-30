@@ -42,14 +42,14 @@ def decide(event: Dict[str, Any], repository: str, has_key: bool) -> Tuple[bool,
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(prog="prgen-gate")
+    parser = argparse.ArgumentParser(prog="failfirst-gate")
     parser.add_argument("--event", required=True, help="path to the GitHub event JSON")
     parser.add_argument("--repository", required=True, help="owner/name of the repo running the workflow")
     args = parser.parse_args(argv)
 
     with open(args.event, encoding="utf-8") as fh:
         event = json.load(fh)
-    skip, reason = decide(event, args.repository, os.environ.get("PRGEN_HAS_KEY") == "true")
+    skip, reason = decide(event, args.repository, os.environ.get("FAILFIRST_HAS_KEY") == "true")
 
     _append(os.environ.get("GITHUB_OUTPUT"), f"skip={'true' if skip else 'false'}\nreason={reason}\n")
     if skip:

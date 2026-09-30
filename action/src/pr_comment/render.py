@@ -10,7 +10,7 @@ import html
 import re
 from typing import Any, Dict, List, Optional
 
-MARKER = "<!-- prgen:comment -->"
+MARKER = "<!-- failfirst:comment -->"
 MAX_ERROR_CHARS = 1500
 
 _VERDICT_TEXT = {
@@ -97,7 +97,7 @@ def _verified(change: str, verification: Dict[str, Any], test_repo_path: str) ->
             "",
             "<details><summary>Apply as a patch</summary>",
             "",
-            "Save as `prgen.patch` in the repo root, then run `git apply prgen.patch`.",
+            "Save as `failfirst.patch` in the repo root, then run `git apply failfirst.patch`.",
             "",
             fence(new_file_patch(test_repo_path, code), "diff"),
             "",
@@ -148,7 +148,7 @@ def _stability_summary(reason: str) -> str:
 
 
 def _footer(extra: Optional[str] = None) -> str:
-    parts = ["Generated and verified by prgen", "never commits to your branch"]
+    parts = ["Generated and verified by failfirst", "never commits to your branch"]
     if extra:
         parts.insert(1, extra)
     return "\n<sub>" + " · ".join(parts) + "</sub>"

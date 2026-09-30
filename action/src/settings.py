@@ -13,17 +13,17 @@ DEFAULT_GENERATE_FALLBACKS = ("gemini-3.5-flash", "gemini-2.5-flash")
 
 
 def classify_model() -> str:
-    return os.environ.get("PRGEN_CLASSIFY_MODEL") or DEFAULT_CLASSIFY_MODEL
+    return os.environ.get("FAILFIRST_CLASSIFY_MODEL") or DEFAULT_CLASSIFY_MODEL
 
 
 def generate_model() -> str:
-    return os.environ.get("PRGEN_GENERATE_MODEL") or DEFAULT_GENERATE_MODEL
+    return os.environ.get("FAILFIRST_GENERATE_MODEL") or DEFAULT_GENERATE_MODEL
 
 
 def fallback_models() -> Dict[str, List[str]]:
     return {
-        classify_model(): _list("PRGEN_CLASSIFY_FALLBACKS", DEFAULT_CLASSIFY_FALLBACKS),
-        generate_model(): _list("PRGEN_GENERATE_FALLBACKS", DEFAULT_GENERATE_FALLBACKS),
+        classify_model(): _list("FAILFIRST_CLASSIFY_FALLBACKS", DEFAULT_CLASSIFY_FALLBACKS),
+        generate_model(): _list("FAILFIRST_GENERATE_FALLBACKS", DEFAULT_GENERATE_FALLBACKS),
     }
 
 

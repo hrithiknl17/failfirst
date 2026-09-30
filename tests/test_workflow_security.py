@@ -7,7 +7,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 ACTION = yaml.safe_load((ROOT / "action.yml").read_text(encoding="utf-8"))
-EXAMPLE_TEXT = (ROOT / "examples" / "liquid-financial" / "prgen.yml").read_text(encoding="utf-8")
+EXAMPLE_TEXT = (ROOT / "examples" / "liquid-financial" / "failfirst.yml").read_text(encoding="utf-8")
 EXAMPLE = yaml.safe_load(EXAMPLE_TEXT)
 STEPS = ACTION["runs"]["steps"]
 
@@ -31,7 +31,7 @@ def test_example_permissions_are_minimal():
 
 
 def test_example_checkout_leaves_no_credentials_and_fetches_history():
-    checkout = next(s for s in EXAMPLE["jobs"]["prgen"]["steps"] if s.get("uses", "").startswith("actions/checkout"))
+    checkout = next(s for s in EXAMPLE["jobs"]["failfirst"]["steps"] if s.get("uses", "").startswith("actions/checkout"))
     assert checkout["with"]["persist-credentials"] is False
     assert checkout["with"]["fetch-depth"] == 0
     assert checkout["with"]["ref"] == "${{ github.event.pull_request.head.sha }}"
@@ -54,7 +54,7 @@ def test_secrets_only_reach_the_steps_that_need_them():
     holders = {s["name"] for s in STEPS if "gemini-api-key" in str(s.get("env", {}))}
     assert holders == {"Gate", "Generate and verify test"}
     # The gate only learns *whether* a key exists, never its value.
-    assert step("Gate")["env"] == {"PRGEN_HAS_KEY": "${{ inputs.gemini-api-key != '' }}"}
+    assert step("Gate")["env"] == {"FAILFIRST_HAS_KEY": "${{ inputs.gemini-api-key != '' }}"}
     token_holders = {s["name"] for s in STEPS if "github-token" in str(s.get("env", {}))}
     assert token_holders == {"Post PR comment"}
     assert "gemini" not in str(step("Install app dependencies").get("env", {})).lower()
@@ -67,8 +67,8 @@ def test_only_the_post_step_uses_the_post_flag():
     assert "inputs.post-comment != 'true'" in step("Render PR comment (dry run, nothing sent)")["if"]
 
 
-@pytest.mark.parametrize("path", ["action.yml", "examples/liquid-financial/prgen.yml", ".github/workflows/ci.yml"])
+@pytest.mark.parametrize("path", ["action.yml", "examples/liquid-financial/failfirst.yml", ".github/workflows/ci.yml"])
 def test_third_party_actions_are_first_party_github_only(path):
     uses = re.findall(r"uses:\s*([^\s#]+)", (ROOT / path).read_text(encoding="utf-8"))
     for ref in uses:
-        assert ref.startswith("actions/") or ref.startswith("OWNER/prgen@"), ref
+        assert ref.startswith("actions/") or ref.startswith("OWNER/failfirst@"), ref

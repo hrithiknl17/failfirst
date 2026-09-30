@@ -16,7 +16,7 @@ reading the code.
 ## [2026-09-30] Decision: Model split — flash-lite classifies, flash generates
 **Context:** Classification is a yes/no with a reason; generation writes code that must pass a real run. Different difficulty, different price.
 **Options considered:** One model for both vs cheap model for classification + stronger for generation.
-**Chose:** `gemini-3.1-flash-lite` for classification, `gemini-3.8-flash` for generation. Both overridable via `PRGEN_CLASSIFY_MODEL` / `PRGEN_GENERATE_MODEL`.
+**Chose:** `gemini-3.1-flash-lite` for classification, `gemini-3.8-flash` for generation. Both overridable via `FAILFIRST_CLASSIFY_MODEL` / `FAILFIRST_GENERATE_MODEL`.
 **Why:** Classification runs on every PR, so it should be cheap. Generation quality directly drives the verified-pass rate; if too many tests land as unverified, first lever is swapping to `gemini-3.1-pro-preview`.
 **Ours vs generated:** my call
 
@@ -99,7 +99,7 @@ reading the code.
 
 ## [2026-09-30] Decision: Build each ref in a git worktree nested inside the target checkout
 **Context:** Need base and PR builds side by side without disturbing the checkout, and `npm ci` per build costs ~30s.
-**Options considered:** Check out refs in place (mutates the working tree) vs worktrees in a temp dir (needs its own `npm ci`) vs worktrees under `<repo>/.prgen/worktrees/<sha>`.
+**Options considered:** Check out refs in place (mutates the working tree) vs worktrees in a temp dir (needs its own `npm ci`) vs worktrees under `<repo>/.failfirst/worktrees/<sha>`.
 **Chose:** Nested worktrees, excluded via the repo's local `.git/info/exclude`. `npm ci` runs inside a worktree only when its `package.json`/lockfile differs from the checkout's.
 **Why:** Node resolves packages by walking up directories, so a nested worktree reuses the parent's `node_modules` — measured: build in ~6s, no install. Worktrees are keyed by commit SHA so reruns reuse finished builds. The checkout's `git status` stays clean.
 **Ours vs generated:** my call
@@ -149,7 +149,7 @@ reading the code.
 ## [2026-09-30] Decision: Ship as a composite action (`action.yml`) plus an example consumer workflow
 **Context:** The brief puts "the actual Action YAML" in `/.github/workflows/`. But a workflow file in *this* repo runs on *this* repo's PRs (a Python tool, not a web app), and target repos consume an Action via `uses: owner/repo@ref`, which requires `action.yml` at the repo root.
 **Options considered:** Workflow-only in this repo vs composite `action.yml` + consumer workflow vs Docker action.
-**Chose:** `action.yml` (composite: gate → install → run → post → artifact), `examples/liquid-financial/prgen.yml` (what a target repo adds), and `.github/workflows/ci.yml` (this tool's own unit tests).
+**Chose:** `action.yml` (composite: gate → install → run → post → artifact), `examples/liquid-financial/failfirst.yml` (what a target repo adds), and `.github/workflows/ci.yml` (this tool's own unit tests).
 **Why:** Composite reuses the runner's Node/Python (no image to build or pull); the target owns Node setup; this repo's own workflow does something meaningful for this repo. Docker actions are slower and can't reuse `setup-node` caches.
 **Ours vs generated:** my call (deviation from the brief's folder note, flagged)
 
@@ -161,8 +161,22 @@ reading the code.
 **Ours vs generated:** my call
 
 ## [2026-09-30] Decision: Incident — edited the act test's workflow copy mid-run; stopped it and restarted clean
-**Context:** While the first local `act` run (same-repo mode) was starting, I ran an actionlint negative check *inside* its working folder. That check used `sed` to rename `post-comment` to `post-commnt` in `.tools/act-target/.github/workflows/prgen-local.yml` and then renamed it back. That file is a generated, git-ignored copy made by `scripts/act_local_test.sh` from `examples/liquid-financial/prgen.yml`. Neither the example, nor `action.yml`, nor the sandbox, nor any GitHub repo was touched. The risk: if act had read the typo'd copy, `post-comment` would have fallen back to its default `"true"` and the real Post step would have run.
+**Context:** While the first local `act` run (same-repo mode) was starting, I ran an actionlint negative check *inside* its working folder. That check used `sed` to rename `post-comment` to `post-commnt` in `.tools/act-target/.github/workflows/failfirst-local.yml` and then renamed it back. That file is a generated, git-ignored copy made by `scripts/act_local_test.sh` from `examples/liquid-financial/failfirst.yml`. Neither the example, nor `action.yml`, nor the sandbox, nor any GitHub repo was touched. The risk: if act had read the typo'd copy, `post-comment` would have fallen back to its default `"true"` and the real Post step would have run.
 **Options considered:** Reason from timing that act had already parsed the good version, and keep the run; vs stop it and restart from scratch.
 **Chose:** Stopped the run (killed act.exe and removed its container) about 37 s in, while it was still in the Gate step, before any comment step. The rerun deletes and re-clones `act-target` and regenerates the workflow. Verified after restart: the host copy matches a fresh regeneration from the unmodified example; the copy inside the running container has `post-comment: "false"` and the same SHA-256 as the host once Windows CRLFs are stripped (`ff325fe8…`); the example and `action.yml` were last modified at 15:32, before the incident. Added guards to the script: it unsets `GITHUB_TOKEN`/`GH_TOKEN` and refuses to launch act unless the workflow says `post-comment: "false"`. Rule for myself: never touch a folder a running job is using; lint a copy.
 **Why:** The no-remote-writes boundary is worth more than a few minutes of rerun time, and "probably fine because of timing" is not evidence. No token was ever used to post: act was never given `GITHUB_TOKEN` (confirmed unset in my shell and in the running container, along with `GH_TOKEN` and `ACTIONS_RUNTIME_TOKEN`); the post client refuses to start without one, before any HTTP request; and `--post` has never been run this session. Every `post` call so far was a dry run, and the real client has only run in unit tests, against a mock transport with a fake token.
 **Ours vs generated:** my call (my mistake, and my fix)
+
+## [2026-09-30] Decision: Name the tool failfirst (redgreen was taken on PyPI)
+**Context:** Five names proposed; you picked redgreen, conditional on it being free where it matters.
+**Options considered:** redgreen vs failfirst (your named fallback).
+**Chose:** failfirst. Renamed everywhere: CLI, Action name, env vars (`FAILFIRST_*`), comment marker, worktree folder (`.failfirst/`), example workflow file, README, this log.
+**Why:** redgreen is free as `hrithiknl17/redgreen` and on the Actions Marketplace, but taken on PyPI ("redgreen 0.0.9 — (Yet another) nosetests daemon"), and at least nine GitHub repos named redgreen are test-output colour tools, so it would be both unpublishable as a Python package and easy to confuse. failfirst is free as `hrithiknl17/failfirst`, on PyPI (`failfirst` and `fail-first`), and on the Marketplace. Noted: a GitHub account/org called `failfirst` exists (doesn't block our repo name), and `BenMalaga/failfirst` (0 stars) describes a similar idea.
+**Ours vs generated:** your call (the rule was yours; I applied it)
+
+## [2026-09-30] Decision: Stability gate also fakes a Sunday evening
+**Context:** The README listed a gap: the clock sweep only set times on one date, so UI that changes by day of the week (liquid-financial's Sunday weekly review) was never exercised.
+**Options considered:** Keep it as a limitation vs add a day-of-week clock.
+**Chose:** Clocks are now (day, time) pairs: 03:00, 13:00, 22:00 on a weekday (today if Mon–Fri, else the Friday before) and 21:00 on the Sunday before it — 10 stability checks instead of 8. The generation prompt now names weekly UI as a reason to pin the clock.
+**Why:** Small change (two extra runs per verified test). Rechecked with the exact production gate: both verified tests (`hub-log-button`, `percent-zero`) hold 10/10. The original unpinned hub test, as a control, is still rejected (fails Wed 03:00 and Wed 22:00) — and it *passes* at Sun 21:00, because the Sunday weekly review uses the daytime layout. So Sunday evening really does render differently from a weekday evening in this app. Remaining gap: specific dates, month boundaries and timezones.
+**Ours vs generated:** your call (close the gap if small); implementation my call

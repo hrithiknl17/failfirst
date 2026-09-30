@@ -1,3 +1,4 @@
+import pytest
 """The verify loop with a fake runner: no browser, no LLM."""
 from pathlib import Path
 
@@ -113,7 +114,7 @@ class ClockRunner:
 
 def gated(gen, runner, tmp_path):
     return verify(gen, head_url="http://pr", base_url="http://base", workdir=tmp_path, run=runner,
-                  stability_reruns=2, stability_clocks=("03:00", "13:00", "22:00"), today="2026-09-30")
+                  stability_reruns=2, today="2026-09-30")  # default clocks: Wed 03/13/22:00 + Sun 21:00
 
 
 def test_time_dependent_test_is_not_verified(tmp_path):
@@ -121,8 +122,9 @@ def test_time_dependent_test_is_not_verified(tmp_path):
     result = gated(gen, ClockRunner(), tmp_path)
     assert result.status == "unverified"
     assert result.diagnosis == "unstable"
-    assert "PR build with clock at 03:00: failed, expected passed" in result.reason
-    assert "PR build with clock at 22:00: failed, expected passed" in result.reason
+    assert "PR build with clock at Wed 03:00: failed, expected passed" in result.reason
+    assert "PR build with clock at Wed 22:00: failed, expected passed" in result.reason
+    assert "PR build with clock at Sun 21:00: failed, expected passed" in result.reason
     assert "13:00" not in result.reason
     fb = gen.feedback[1]
     assert fb.kind == "unstable" and "03:00" in fb.details
@@ -134,6 +136,22 @@ def test_retry_that_pins_the_clock_is_verified(tmp_path):
     result = gated(gen, runner, tmp_path)
     assert result.status == "verified"
     assert result.test.code == OTHER
-    assert "8 stability checks" in result.reason
+    assert "10 stability checks" in result.reason
+    assert "Wed 03:00, Wed 13:00, Wed 22:00, Sun 21:00" in result.reason
     # 2 reruns + 3 clocks x (PR + base), plus the first PR and base run, for the verified attempt
     assert ("http://base", "2026-09-30T22:00:00") in runner.calls
+    assert ("http://base", "2026-09-27T21:00:00") in runner.calls
+
+
+@pytest.mark.parametrize("today, weekday, sunday", [
+    ("2026-09-30", "2026-09-30", "2026-09-27"),  # Wednesday -> itself, previous Sunday
+    ("2026-09-28", "2026-09-28", "2026-09-27"),  # Monday
+    ("2026-10-02", "2026-10-02", "2026-09-27"),  # Friday
+    ("2026-10-03", "2026-10-02", "2026-09-27"),  # Saturday -> Friday before
+    ("2026-10-04", "2026-10-02", "2026-09-27"),  # Sunday -> Friday before, and the Sunday before that
+])
+def test_clock_dates_pick_a_weekday_and_the_sunday_before_it(today, weekday, sunday):
+    from verification.verify import clock_dates
+    got = clock_dates(today)
+    assert (got[0].isoformat(), got[1].isoformat()) == (weekday, sunday)
+    assert got[0].weekday() < 5 and got[1].weekday() == 6

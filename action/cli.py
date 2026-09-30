@@ -29,7 +29,7 @@ _STATUS_LETTER = {"added": "A", "modified": "M", "deleted": "D", "renamed": "R"}
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(prog="prgen")
+    parser = argparse.ArgumentParser(prog="failfirst")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_classify = sub.add_parser("classify", help="extract the diff and decide whether it needs a test")
@@ -147,7 +147,7 @@ def _run(args) -> int:
         args.repo, args.base, args.head, llm, out_dir, name=name,
         title=args.title, body=args.body, notes=notes,
         commands=AppCommands(build=args.build_cmd, serve=args.serve_cmd, install=args.install_cmd),
-        log=lambda msg: print(f"[prgen {time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr, flush=True),
+        log=lambda msg: print(f"[failfirst {time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr, flush=True),
     )
     _print_run_report(result, out_dir)
     return 2 if result.status == "error" else 0
