@@ -2,6 +2,8 @@
 
 Generates Playwright tests from pull request diffs, and only posts a test after it has been verified against a real build.
 
+Available on the [GitHub Marketplace](https://github.com/marketplace/actions/failfirst-verified-pr-tests) as "failfirst: verified PR tests". Use it with `uses: hrithiknl17/failfirst@v1`.
+
 ## Why this exists
 
 Most AI test tools write a test from the diff and post it without ever running it. The selectors are often guesses, and nobody finds out until a human tries it.
